@@ -1,0 +1,39 @@
+{
+  "channel_settings": {
+    "default_privacy": "private",
+    "default_category": "22",
+    "default_language": "en",
+    "notify_subscribers": false
+  },
+  "video_metadata_template": {
+    "title_prefix": "Sora AI Generated: ",
+    "description_template": "This video was generated using Sora AI and automatically uploaded.\n\n📅 Generated: {timestamp}\n🤖 AI Model: Sora AI by OpenAI\n⚡ Automated Upload: YouTube Upload Automation Pipeline\n\n{custom_description}\n\n#SoraAI #AIGenerated #AutomatedUpload #AIVideo",
+    "default_tags": [
+      "Sora AI",
+      "AI Generated",
+      "Automated Upload",
+      "OpenAI",
+      "Artificial Intelligence",
+      "AI Video"
+    ]
+  },
+  "upload_settings": {
+    "retry_attempts": 3,
+    "retry_delay_seconds": 60,
+    "chunk_size": -1,
+    "resumable_upload": true
+  },
+  "notification_settings": {
+    "enabled": false,
+    "webhook_url": "",
+    "discord_webhook": "",
+    "slack_webhook": "",
+    "email_notifications": false
+  },
+  "file_processing": {
+    "valid_extensions": [".mp4", ".mov", ".avi", ".mkv", ".webm"],
+    "max_file_size_mb": 2048,
+    "file_stability_checks": 3,
+    "stability_check_interval": 5
+  }
+}
