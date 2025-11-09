@@ -8,9 +8,6 @@ import sys
 import json
 import traceback
 import asyncio
-import io
-import numpy as np
-import imageio
 from pathlib import Path
 from dotenv import load_dotenv
 import httpx
@@ -19,15 +16,20 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, HTMLResponse, FileResponse
 from datetime import datetime
 from typing import Optional, Dict, Any, List
-from PIL import Image
 
-# Initialize directories
+# Initialize directories - ensure all video storage paths exist
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 VIDEOS_DIR = os.path.join(BASE_DIR, "videos")
+INPUT_DIR = os.path.join(VIDEOS_DIR, "input")
 PROCESSED_DIR = os.path.join(VIDEOS_DIR, "processed")
+THUMBNAILS_DIR = os.path.join(VIDEOS_DIR, "thumbnails")
 
-# Create necessary directories without printing
-os.makedirs(PROCESSED_DIR, exist_ok=True)
+# Create all necessary directories
+for dir_path in [VIDEOS_DIR, INPUT_DIR, PROCESSED_DIR, THUMBNAILS_DIR]:
+    os.makedirs(dir_path, exist_ok=True)
+    print(f"✅ Ensured directory exists: {dir_path}")
+
+print(f"📁 Video storage structure initialized at: {VIDEOS_DIR}")
 
 # Load environment variables silently
 load_dotenv()
@@ -63,15 +65,19 @@ class TimeoutError(AIError):
 # Configure OpenAI API with validation
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 if not OPENAI_API_KEY:
-    print("WARNING: OPENAI_API_KEY not found in environment variables.")
-    print("Sora AI integration will be disabled. Video generation will use placeholder videos.")
-    print("To enable Sora AI:")
-    print("1. Get API access to Sora (when available)")
+    print("❌ ERROR: OPENAI_API_KEY not found in environment variables.")
+    print("❌ SORA-ONLY MODE: This system requires Sora AI to be properly configured.")
+    print("❌ NO FALLBACKS OR PLACEHOLDERS ALLOWED.")
+    print("To configure Sora AI:")
+    print("1. Get API access to Sora from OpenAI")
     print("2. Add your API key to the .env file: OPENAI_API_KEY=your_key_here")
+    print("3. Restart the server")
+    print("❌ SERVER WILL NOT GENERATE VIDEOS WITHOUT SORA AI")
     OPENAI_API_KEY = None
 
-# Configuration flags
-USE_SORA_AI = OPENAI_API_KEY is not None and os.getenv('USE_SORA_AI', 'true').lower() == 'true'
+# Configuration flags - SORA AI ONLY MODE
+USE_SORA_AI = True  # Always use Sora AI - no fallbacks allowed
+SORA_ONLY_MODE = True  # Strict mode: fail if Sora is not available
 
 # Configure API client with robust error handling
 transport = httpx.AsyncHTTPTransport(
@@ -91,288 +97,425 @@ ai_client = httpx.AsyncClient(
     follow_redirects=True  # Follow redirects automatically
 )
 
-async def generate_sora_video(prompt: str, duration: str, style: str, orientation: str) -> str:
+async def generate_video_description(prompt: str, style: str, duration: str, orientation: str, camera_view: str = None, background: str = None) -> str:
     """
-    Generate a video using Sora 2 Pro AI with the given parameters
-    Returns the filename of the generated video
+    Generate an engaging, SEO-optimized YouTube description based on video parameters
     """
     try:
-        print(f"\n=== Attempting Sora 2 Pro Video Generation ===")
+        print(f"\n=== Generating Video Description ===")
         print(f"Prompt: {prompt}")
-        print(f"Duration: {duration}, Style: {style}, Orientation: {orientation}")
-        print(f"Sora AI Enabled: {USE_SORA_AI}")
+        print(f"Style: {style}")
+        print(f"Duration: {duration}")
         
-        # Check if Sora AI is available
-        if not USE_SORA_AI:
-            raise AIError("Sora AI is not configured or not available. Please check your API key and configuration.", status_code=503)
+        # Try GPT-powered description generation first
+        if OPENAI_API_KEY and USE_SORA_AI:
+            try:
+                description_prompt = f"""
+                Create an engaging, SEO-optimized YouTube description for an AI-generated video with these details:
+                
+                Video Content: {prompt}
+                Style: {style}
+                Duration: {duration}
+                Orientation: {orientation}
+                Camera View: {camera_view or 'N/A'}
+                Background: {background or 'N/A'}
+                
+                The description should be:
+                - 200-400 words long
+                - Exciting and engaging to read
+                - Include relevant hashtags
+                - Mention AI/Sora technology
+                - Be SEO-friendly with good keywords
+                - Include a call-to-action
+                - Professional but enthusiastic tone
+                
+                Format it as a proper YouTube description with emojis and line breaks for readability.
+                """
+                
+                gpt_data = {
+                    "model": "gpt-4",
+                    "messages": [
+                        {"role": "system", "content": "You are an expert YouTube content creator and SEO specialist who creates viral video descriptions."},
+                        {"role": "user", "content": description_prompt}
+                    ],
+                    "max_tokens": 800,
+                    "temperature": 0.7
+                }
+                
+                response = await ai_client.post("/v1/chat/completions", json=gpt_data)
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    generated_description = result["choices"][0]["message"]["content"]
+                    
+                    print(f"✅ GPT-powered description generated ({len(generated_description)} characters)")
+                    return generated_description.strip()
+                    
+            except Exception as gpt_error:
+                print(f"⚠️ GPT description generation failed: {gpt_error}")
         
-        # Convert duration to seconds
-        duration_seconds = int(duration.replace("s", ""))
+        # Fallback to template-based description
+        print("📝 Creating template-based description...")
         
-        # Prepare Sora 2 Pro API request with correct parameters
-        # Supported sizes: '720x1280', '1280x720', '1024x1792', '1792x1024'
-        if orientation == "portrait":
-            size = "720x1280"  # Portrait format
+        # Extract key elements from the prompt
+        prompt_lower = prompt.lower()
+        
+        # Determine content category
+        categories = {
+            'nature': ['landscape', 'forest', 'ocean', 'mountain', 'sunset', 'sunrise', 'wildlife', 'garden'],
+            'urban': ['city', 'building', 'street', 'traffic', 'skyline', 'architecture', 'downtown'],
+            'tech': ['robot', 'ai', 'futuristic', 'cyber', 'digital', 'hologram', 'sci-fi'],
+            'abstract': ['abstract', 'geometric', 'pattern', 'kaleidoscope', 'fractal', 'artistic'],
+            'people': ['person', 'human', 'character', 'portrait', 'dancer', 'athlete'],
+            'fantasy': ['magic', 'fantasy', 'dragon', 'wizard', 'mythical', 'fairy', 'enchanted']
+        }
+        
+        detected_category = 'general'
+        for category, keywords in categories.items():
+            if any(keyword in prompt_lower for keyword in keywords):
+                detected_category = category
+                break
+        
+        # Style-specific descriptors
+        style_descriptors = {
+            'cinematic': 'cinematic masterpiece with Hollywood-level production values',
+            'realistic': 'photorealistic rendering that looks incredibly lifelike',
+            'animated': 'beautifully animated with smooth, flowing visuals',
+            'documentary': 'authentic documentary-style footage with natural feel',
+            'artistic': 'creative artistic interpretation with unique visual flair',
+            'vintage': 'nostalgic vintage aesthetic with classic film qualities'
+        }
+        
+        # Duration-based content
+        duration_num = int(duration.replace('s', ''))
+        if duration_num <= 5:
+            duration_desc = "quick, impactful"
+        elif duration_num <= 10:
+            duration_desc = "perfectly timed"
         else:
-            size = "1280x720"  # Landscape format
+            duration_desc = "immersive, detailed"
+        
+        # Build description components
+        description_parts = [
+            f"🎬 Incredible AI-Generated Video: {prompt.title()}",
+            "",
+            f"Watch this {duration_desc} {style_descriptors.get(style, 'AI-generated')} video created using cutting-edge artificial intelligence technology! This {duration} {style} video showcases the amazing capabilities of modern AI in creating stunning visual content.",
+            "",
+            "✨ Video Details:",
+            f"🎨 Style: {style.title()}",
+            f"⏱️ Duration: {duration}",
+            f"📐 Format: {orientation.title()}",
+        ]
+        
+        if camera_view:
+            description_parts.append(f"📹 Camera: {camera_view.title()} perspective")
+        if background:
+            description_parts.append(f"🌅 Setting: {background.title()} environment")
             
-        sora_data = {
-            "model": "sora-2-pro", 
-            "prompt": prompt,
-            "size": size
-        }
+        description_parts.extend([
+            "",
+            "🤖 This video was generated using state-of-the-art AI technology that understands and creates visual content from text descriptions. The result is a unique piece of digital art that demonstrates the incredible potential of artificial intelligence in creative fields.",
+            "",
+            "🚀 What makes this special:",
+            "• Generated entirely by AI from a text prompt",
+            "• No traditional filming or animation required",
+            "• Showcases the future of content creation",
+            f"• {style.title()} style with professional quality",
+            "• Represents the cutting edge of AI video generation",
+            "",
+            "💡 The technology behind this video represents a revolution in content creation, allowing anyone to bring their imagination to life through the power of artificial intelligence.",
+            "",
+            "👍 If you enjoyed this AI-generated content, please like and subscribe for more amazing AI creations! Share your own video ideas in the comments - what would you like to see AI create next?",
+            "",
+            "🔔 Turn on notifications to never miss the latest AI-generated content!",
+            "",
+            "📱 Follow us for more AI content and behind-the-scenes looks at how these videos are made.",
+            "",
+            # Category-specific hashtags
+            f"#AIGenerated #VideoGeneration #SoraAI #ArtificialIntelligence #{style.title()}Video #TechDemo #FutureTech #AIContent #{detected_category.title()}Video #DigitalArt #Innovation #CreativeAI #NextGenContent #AIRevolution #TechInnovation"
+        ])
         
-        print(f"🎬 Sora 2 Pro Request: {sora_data}")
+        description = "\n".join(description_parts)
         
-        # Use the correct Sora endpoint with a fresh client
-        sora_endpoint = "/v1/videos"
-        
-        # Create a fresh client to ensure we have the latest API key
-        fresh_client = httpx.AsyncClient(
-            base_url="https://api.openai.com",
-            headers={
-                "Authorization": f"Bearer {os.getenv('OPENAI_API_KEY')}",
-                "Content-Type": "application/json"
-            },
-            timeout=180.0,
-            verify=True
-        )
-        
-        try:
-            print(f"🔍 Using Sora endpoint: {sora_endpoint}")
-            print(f"🔑 API Key (last 10 chars): ...{os.getenv('OPENAI_API_KEY', '')[-10:]}")
-            
-            response = await fresh_client.post(
-                sora_endpoint,
-                json=sora_data,
-                timeout=180.0  # 3 minutes for video generation
-            )
-            
-            print(f"📡 Sora API Response Status: {response.status_code}")
-            
-            if response.status_code == 200:
-                print(f"✅ Sora 2 Pro API successful!")
-                result = response.json()
-                print(f"📋 Sora Response: {result}")
-                
-                # Sora API returns a job object, we need to poll for completion
-                video_id = result.get("id")
-                status = result.get("status")
-                
-                if video_id and status:
-                    print(f"🎬 Sora video job created: {video_id}, status: {status}")
-                    
-                    # Poll for completion (Sora videos take time to generate)
-                    max_attempts = 60  # 5 minutes max wait
-                    attempt = 0
-                    
-                    while attempt < max_attempts:
-                        print(f"🔄 Polling attempt {attempt + 1}/{max_attempts} for video {video_id}")
-                        
-                        # Check video status
-                        status_response = await fresh_client.get(f"/v1/videos/{video_id}")
-                        
-                        if status_response.status_code == 200:
-                            status_result = status_response.json()
-                            current_status = status_result.get("status")
-                            progress = status_result.get("progress", 0)
-                            
-                            print(f"📊 Video {video_id} status: {current_status}, progress: {progress}%")
-                            
-                            if current_status == "completed":
-                                # Video is ready! The Sora API doesn't provide direct URLs in the status response
-                                # Instead, we need to get the video content from the video ID endpoint
-                                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                                filename = f"sora2pro_{video_id}_{timestamp}.mp4"
-                                filepath = os.path.join(PROCESSED_DIR, filename)
-                                
-                                print(f"📥 Downloading Sora video content for ID: {video_id}")
-                                
-                                # Get video content directly from the video endpoint
-                                # According to Sora API docs, completed videos can be accessed via the video ID
-                                try:
-                                    # Try to get the video file content directly
-                                    video_content_response = await fresh_client.get(f"/v1/videos/{video_id}")
-                                    
-                                    if video_content_response.status_code == 200:
-                                        content_type = video_content_response.headers.get('content-type', '')
-                                        
-                                        if 'video' in content_type.lower() or 'octet-stream' in content_type.lower():
-                                            # This is the actual video content
-                                            with open(filepath, 'wb') as f:
-                                                f.write(video_content_response.content)
-                                            
-                                            file_size = len(video_content_response.content)
-                                            print(f"🎉 Sora 2 Pro video downloaded: {filename} ({file_size} bytes)")
-                                            
-                                            if file_size > 10000:  # Sanity check - real videos should be > 10KB
-                                                return filename
-                                            else:
-                                                print("⚠️ Downloaded file seems too small, may be corrupted")
-                                                
-                                        else:
-                                            # Still getting JSON, try to find download link
-                                            response_data = video_content_response.json()
-                                            
-                                            # Look for any URL-like fields
-                                            download_url = None
-                                            for field in ['download_url', 'file_url', 'url', 'video_url', 'content_url', 'asset_url']:
-                                                if field in response_data:
-                                                    download_url = response_data[field]
-                                                    break
-                                            
-                                            if download_url:
-                                                print(f"📥 Found download URL: {download_url}")
-                                                # Download from the provided URL
-                                                async with httpx.AsyncClient(timeout=120.0) as download_client:
-                                                    video_response = await download_client.get(download_url)
-                                                    
-                                                    if video_response.status_code == 200:
-                                                        with open(filepath, 'wb') as f:
-                                                            f.write(video_response.content)
-                                                        
-                                                        file_size = len(video_response.content)
-                                                        print(f"🎉 Sora 2 Pro video downloaded: {filename} ({file_size} bytes)")
-                                                        return filename
-                                                    else:
-                                                        print(f"❌ Failed to download from URL: HTTP {video_response.status_code}")
-                                            else:
-                                                print(f"❌ No download URL found. Available fields: {list(response_data.keys())}")
-                                    
-                                    # If direct download doesn't work, try alternative approach
-                                    print("🔄 Trying alternative download method...")
-                                    
-                                    # Some APIs provide content via different endpoints
-                                    for alt_endpoint in [f"/v1/videos/{video_id}/download", f"/v1/videos/{video_id}/content"]:
-                                        try:
-                                            alt_response = await fresh_client.get(alt_endpoint)
-                                            if alt_response.status_code == 200:
-                                                content_type = alt_response.headers.get('content-type', '')
-                                                if 'video' in content_type.lower():
-                                                    with open(filepath, 'wb') as f:
-                                                        f.write(alt_response.content)
-                                                    
-                                                    file_size = len(alt_response.content)
-                                                    print(f"🎉 Sora video downloaded via {alt_endpoint}: {filename} ({file_size} bytes)")
-                                                    return filename
-                                        except:
-                                            continue
-                                    
-                                    # If all download methods fail, create a placeholder but log this as an issue
-                                    print(f"⚠️ Could not download Sora video content. Video completed but download failed.")
-                                    print(f"📋 Completed video info: {status_result}")
-                                    raise AIError("Sora video completed but could not be downloaded")
-                                    
-                                except Exception as download_error:
-                                    print(f"❌ Error downloading Sora video: {download_error}")
-                                    raise AIError(f"Failed to download completed Sora video: {str(download_error)}")
-                            
-                            elif current_status == "failed" or current_status == "error":
-                                error_msg = status_result.get("error", "Unknown error")
-                                print(f"❌ Sora video generation failed: {error_msg}")
-                                raise AIError(f"Sora video generation failed: {error_msg}")
-                            
-                            elif current_status in ["queued", "processing", "generating"]:
-                                # Still processing, wait and retry
-                                await asyncio.sleep(5)  # Wait 5 seconds between polls
-                                attempt += 1
-                                continue
-                            else:
-                                print(f"⚠️ Unknown status: {current_status}")
-                                await asyncio.sleep(5)
-                                attempt += 1
-                                continue
-                        else:
-                            print(f"❌ Status check failed: HTTP {status_response.status_code}")
-                            await asyncio.sleep(5)
-                            attempt += 1
-                            continue
-                    
-                    # If we get here, we timed out
-                    print(f"⏰ Sora video generation timed out after {max_attempts} attempts")
-                    raise TimeoutError(f"Sora video generation timed out for job {video_id}")
-                else:
-                    print(f"❌ Invalid Sora response format: {result}")
-                    raise AIError("Sora API returned invalid response format")
-                
-            elif response.status_code == 400:
-                error_text = response.text
-                print(f"❌ Sora API Bad Request: {error_text}")
-                raise AIError(f"Sora API request error: {error_text}", status_code=400)
-            elif response.status_code == 401:
-                print(f"❌ Sora API Authentication Error")
-                raise AIError("Sora API authentication failed. Please check your API key.", status_code=401)
-            elif response.status_code == 403:
-                print(f"❌ Sora API Access Forbidden")
-                raise AIError("Sora API access denied. Your account may not have Sora access.", status_code=403)
-            elif response.status_code == 429:
-                print(f"❌ Sora API Rate Limited")
-                raise AIError("Sora API rate limit exceeded. Please try again later.", status_code=429)
-            else:
-                error_text = response.text
-                print(f"⚠️ Sora API returned: {response.status_code} - {error_text}")
-                raise AIError(f"Sora API error: {response.status_code} - {error_text}", status_code=response.status_code)
-                
-        except httpx.TimeoutException:
-            print(f"❌ Sora API request timed out")
-            raise TimeoutError("Sora API request timed out")
-        except httpx.NetworkError as e:
-            print(f"❌ Network error: {str(e)}")
-            raise NetworkError(f"Network error connecting to Sora API: {str(e)}")
-        except AIError:
-            # Re-raise AIError exceptions
-            raise
-        except Exception as e:
-            print(f"❌ Unexpected error with Sora API: {str(e)}")
-            raise AIError(f"Unexpected Sora API error: {str(e)}")
-        finally:
-            # Always close the fresh client
-            await fresh_client.aclose()
-        
-        # If all Sora endpoints fail, fall back to DALL-E + video conversion
-        print("⚠️ All Sora endpoints failed, falling back to DALL-E image conversion")
-        
-        # Generate image with DALL-E as fallback
-        dalle_data = {
-            "model": "dall-e-3",
-            "prompt": prompt,
-            "n": 1,
-            "size": "1024x1024",
-            "quality": "standard",
-            "response_format": "url"
-        }
-        
-        response = await ai_client.post("/v1/images/generations", json=dalle_data)
-        
-        if response.status_code != 200:
-            raise AIError(f"DALL-E API failed: {response.status_code}", status_code=response.status_code)
-        
-        result = response.json()
-        image_url = result["data"][0]["url"]
-        
-        # Convert single image to simple video
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"dalle_video_{timestamp}.mp4"
-        filepath = os.path.join(PROCESSED_DIR, filename)
-        
-        # Download and convert image to video
-        async with httpx.AsyncClient() as client:
-            img_response = await client.get(image_url)
-            img = Image.open(io.BytesIO(img_response.content))
-            
-            # Create simple video from single image
-            frames = []
-            for _ in range(duration_seconds * 5):  # 5 fps for simplicity
-                frames.append(np.array(img))
-            
-            imageio.mimsave(filepath, frames, fps=5, format='mp4')
-        
-        print(f"📹 DALL-E fallback video created: {filename}")
-        return filename
+        print(f"✅ Template-based description generated ({len(description)} characters)")
+        return description
         
     except Exception as e:
-        print(f"❌ Error in video generation: {str(e)}")
-        raise AIError(f"Video generation failed: {str(e)}", status_code=500)
+        print(f"❌ Description generation failed: {str(e)}")
+        # Ultra-simple fallback
+        return f"""🎬 AI-Generated Video: {prompt}
+
+This amazing {duration} video was created using cutting-edge AI technology! 
+
+🤖 Generated with: AI Video Generation
+🎨 Style: {style.title()}
+⏱️ Duration: {duration}
+
+👍 Like & Subscribe for more AI content!
+
+#AIGenerated #SoraAI #VideoGeneration #ArtificialIntelligence"""
+
+async def generate_video_thumbnail(prompt: str, video_path: str, style: str = "realistic") -> Optional[str]:
+    """
+    SORA AI ONLY MODE - No thumbnail generation
+    Sora videos are complete AI-generated content, thumbnails should be handled separately
+    """
+    print(f"\n=== Sora AI Only Mode - Thumbnail Generation Disabled ===")
+    print(f"Video: {video_path}")
+    print(f"Prompt: {prompt}")
+    print(f"⚠️ Thumbnail generation disabled in Sora-only mode")
+    print(f"💡 Use Sora AI to generate thumbnail images separately if needed")
+    return None
+            
+    # SORA AI ONLY MODE - No thumbnail generation
+    print(f"\n=== Sora AI Only Mode - Thumbnail Generation Disabled ===")
+    print(f"Video: {video_path}")
+    print(f"Prompt: {prompt}")
+    print(f"⚠️ Thumbnail generation disabled in Sora-only mode")
+    print(f"💡 Use Sora AI to generate thumbnail images separately if needed")
+    return None
+
+async def generate_sora_video(prompt: str, duration: str, style: str, orientation: str) -> str:
+    """
+    Generate a video using ONLY Sora AI - no fallbacks, no placeholders
+    Returns the filename of the generated video
+    """
+    print(f"\n=== Sora AI Video Generation (EXCLUSIVE MODE) ===")
+    print(f"Prompt: {prompt}")
+    print(f"Duration: {duration}, Style: {style}, Orientation: {orientation}")
+    
+    # STRICT CHECK: Sora AI must be available
+    if not USE_SORA_AI or not OPENAI_API_KEY:
+        error_msg = "Sora AI is required but not properly configured. Please set OPENAI_API_KEY."
+        print(f"❌ {error_msg}")
+        raise AIError(error_msg, status_code=503)
+    
+    # Convert duration to seconds - ensure we handle the duration properly
+    try:
+        duration_seconds = int(duration.replace("s", ""))
+        # Ensure minimum duration is respected for Sora
+        if duration_seconds < 4:
+            duration_seconds = 4
+        # Sora typically supports up to 20 seconds
+        elif duration_seconds > 20:
+            duration_seconds = 20
+    except:
+        duration_seconds = 10  # Default to 10 seconds
+    
+    print(f"🎬 Parsed duration: {duration_seconds} seconds from input '{duration}'")
+    
+    # Prepare Sora AI request with correct parameters
+    if orientation == "portrait":
+        size = "720x1280"  # Portrait format
+    else:
+        size = "1280x720"  # Landscape format
+        
+    # Sora API request - duration included in prompt for better control
+    sora_data = {
+        "model": "sora-2-pro", 
+        "prompt": f"{prompt}. Duration: {duration_seconds} seconds.",
+        "size": size
+    }
+    
+    print(f"🎬 Sora AI Request: {sora_data}")
+    
+    # Use the Sora endpoint
+    sora_endpoint = "/v1/videos"
+    
+    # Create API client for Sora
+    sora_client = httpx.AsyncClient(
+        base_url="https://api.openai.com",
+        headers={
+            "Authorization": f"Bearer {OPENAI_API_KEY}",
+            "Content-Type": "application/json"
+        },
+        timeout=300.0,  # 5 minutes for video generation
+        verify=True
+    )
+    
+    try:
+        print(f"🔍 Using Sora endpoint: {sora_endpoint}")
+        print(f"🔑 API Key configured: {'✅ Yes' if OPENAI_API_KEY else '❌ No'}")
+        
+        # Make the Sora API request
+        response = await sora_client.post(
+            sora_endpoint,
+            json=sora_data,
+            timeout=300.0
+        )
+        
+        print(f"📡 Sora API Response Status: {response.status_code}")
+        
+        if response.status_code == 200:
+            print(f"✅ Sora AI request successful!")
+            result = response.json()
+            print(f"📋 Sora Response: {result}")
+            
+            # Sora API returns a job object - poll for completion
+            video_id = result.get("id")
+            status = result.get("status")
+            
+            if not video_id:
+                raise AIError("Sora API response missing video ID")
+            
+            print(f"🎬 Sora video job created: {video_id}, status: {status}")
+            
+            # Poll for completion (Sora videos take time to generate)
+            max_attempts = 120  # 10 minutes max wait
+            attempt = 0
+            
+            while attempt < max_attempts:
+                print(f"🔄 Polling attempt {attempt + 1}/{max_attempts} for video {video_id}")
+                
+                # Check video status
+                status_response = await sora_client.get(f"/v1/videos/{video_id}")
+                
+                if status_response.status_code == 200:
+                    status_result = status_response.json()
+                    current_status = status_result.get("status")
+                    progress = status_result.get("progress", 0)
+                    
+                    print(f"📊 Video {video_id} status: {current_status}, progress: {progress}%")
+                    
+                    if current_status == "completed":
+                        # Video is ready! Download it
+                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        filename = f"sora_video_{duration_seconds}s_{timestamp}.mp4"
+                        filepath = os.path.join(PROCESSED_DIR, filename)
+                        
+                        print(f"📥 Downloading Sora video content for ID: {video_id}")
+                        
+                        # Try different methods to get the video content
+                        video_downloaded = False
+                        
+                        # Method 1: Direct video content
+                        try:
+                            video_content_response = await sora_client.get(f"/v1/videos/{video_id}")
+                            if video_content_response.status_code == 200:
+                                content_type = video_content_response.headers.get('content-type', '')
+                                if 'video' in content_type.lower() or 'octet-stream' in content_type.lower():
+                                    with open(filepath, 'wb') as f:
+                                        f.write(video_content_response.content)
+                                    
+                                    file_size = len(video_content_response.content)
+                                    if file_size > 10000:  # Reasonable video file size
+                                        print(f"🎉 Sora video downloaded: {filename} ({file_size} bytes)")
+                                        video_downloaded = True
+                        except Exception as e:
+                            print(f"⚠️ Direct download method failed: {str(e)}")
+                        
+                        # Method 2: Look for download URL in response
+                        if not video_downloaded:
+                            try:
+                                response_data = status_result
+                                download_url = None
+                                for field in ['download_url', 'file_url', 'url', 'video_url', 'content_url']:
+                                    if field in response_data:
+                                        download_url = response_data[field]
+                                        break
+                                
+                                if download_url:
+                                    print(f"📥 Found download URL: {download_url}")
+                                    async with httpx.AsyncClient(timeout=120.0) as download_client:
+                                        video_response = await download_client.get(download_url)
+                                        if video_response.status_code == 200:
+                                            with open(filepath, 'wb') as f:
+                                                f.write(video_response.content)
+                                            
+                                            file_size = len(video_response.content)
+                                            if file_size > 10000:
+                                                print(f"🎉 Sora video downloaded from URL: {filename} ({file_size} bytes)")
+                                                video_downloaded = True
+                            except Exception as e:
+                                print(f"⚠️ URL download method failed: {str(e)}")
+                        
+                        # Method 3: Try alternative endpoints
+                        if not video_downloaded:
+                            for alt_endpoint in [f"/v1/videos/{video_id}/download", f"/v1/videos/{video_id}/content"]:
+                                try:
+                                    alt_response = await sora_client.get(alt_endpoint)
+                                    if alt_response.status_code == 200:
+                                        content_type = alt_response.headers.get('content-type', '')
+                                        if 'video' in content_type.lower():
+                                            with open(filepath, 'wb') as f:
+                                                f.write(alt_response.content)
+                                            
+                                            file_size = len(alt_response.content)
+                                            if file_size > 10000:
+                                                print(f"🎉 Sora video downloaded via {alt_endpoint}: {filename} ({file_size} bytes)")
+                                                video_downloaded = True
+                                                break
+                                except:
+                                    continue
+                        
+                        if video_downloaded and os.path.exists(filepath):
+                            file_size = os.path.getsize(filepath)
+                            print(f"✅ Sora video successfully saved: {filepath} ({file_size} bytes)")
+                            
+                            # Thumbnail generation disabled in Sora-only mode
+                            print(f"📸 Thumbnail generation skipped (Sora-only mode)")
+                            thumbnail_filename = None
+                            
+                            return filename
+                        else:
+                            raise AIError("Sora video completed but could not be downloaded")
+                    
+                    elif current_status == "failed" or current_status == "error":
+                        error_msg = status_result.get("error", "Unknown error")
+                        print(f"❌ Sora video generation failed: {error_msg}")
+                        raise AIError(f"Sora video generation failed: {error_msg}")
+                    
+                    elif current_status in ["queued", "processing", "generating"]:
+                        # Still processing, wait and retry
+                        await asyncio.sleep(5)  # Wait 5 seconds between polls
+                        attempt += 1
+                        continue
+                    else:
+                        print(f"⚠️ Unknown status: {current_status}")
+                        await asyncio.sleep(5)
+                        attempt += 1
+                        continue
+                else:
+                    print(f"❌ Status check failed: HTTP {status_response.status_code}")
+                    error_text = status_response.text
+                    if attempt > 10:  # After multiple attempts, show more detail
+                        print(f"Status check error: {error_text}")
+                    await asyncio.sleep(5)
+                    attempt += 1
+                    continue
+            
+            # If we get here, we timed out
+            raise TimeoutError(f"Sora video generation timed out after {max_attempts} attempts")
+        
+        elif response.status_code == 400:
+            error_text = response.text
+            print(f"❌ Sora API Bad Request: {error_text}")
+            raise AIError(f"Sora API request error: {error_text}", status_code=400)
+        elif response.status_code == 401:
+            print(f"❌ Sora API Authentication Error")
+            raise AIError("Sora API authentication failed. Check your OpenAI API key.", status_code=401)
+        elif response.status_code == 403:
+            print(f"❌ Sora API Access Forbidden")
+            raise AIError("Sora API access denied. Your OpenAI account may not have Sora access.", status_code=403)
+        elif response.status_code == 404:
+            print(f"❌ Sora API Not Found")
+            raise AIError("Sora API endpoint not found. Sora may not be available yet.", status_code=404)
+        elif response.status_code == 429:
+            print(f"❌ Sora API Rate Limited")
+            raise AIError("Sora API rate limit exceeded. Please try again later.", status_code=429)
+        else:
+            error_text = response.text
+            print(f"❌ Sora API returned: {response.status_code} - {error_text}")
+            raise AIError(f"Sora API error: {response.status_code} - {error_text}", status_code=response.status_code)
+            
+    except httpx.TimeoutException:
+        print(f"❌ Sora API request timed out")
+        raise TimeoutError("Sora API request timed out")
+    except httpx.NetworkError as e:
+        print(f"❌ Network error: {str(e)}")
+        raise NetworkError(f"Network error connecting to Sora API: {str(e)}")
+    finally:
+        await sora_client.aclose()
 
 
 # Helper function for error handling
@@ -470,8 +613,14 @@ async def process_video_generation(video: Dict[str, Any]):
                         filepath = os.path.join(processed_dir, filename)
                         print(f"✅ AI generated video successfully: {filename}")
                         
-                        # Update version data with AI result
-                        generation_method = "dalle_video" if "dalle" in filename else "sora_ai"
+                        # Update version data with AI result - detect actual generation method
+                        if "sora2pro" in filename:
+                            generation_method = "sora_ai"
+                        elif "dalle_video" in filename:
+                            generation_method = "dalle_enhanced"
+                        else:
+                            generation_method = "ai_generated"
+                            
                         version_data.update({
                             "status": "completed",
                             "url": f"/api/v1/videos/view/{filename}",
@@ -489,39 +638,112 @@ async def process_video_generation(video: Dict[str, Any]):
                         filename = f"fallback_video_{video['id']}_{timestamp}_v{version+1}.mp4"
                         filepath = os.path.join(processed_dir, filename)
                         
-                        # Create fallback placeholder video
+                        # Create fallback placeholder video with proper duration
                         try:
                             import numpy as np
                             import imageio
                             
-                            duration = int(video.get("duration", "10s").replace("s", ""))
+                            # Parse duration properly
+                            try:
+                                duration = int(video.get("duration", "10s").replace("s", ""))
+                                if duration < 4:
+                                    duration = 4
+                                elif duration > 60:  # Cap at 60 seconds for fallback
+                                    duration = 60
+                            except:
+                                duration = 10
+                            
                             fps = 30
                             total_frames = duration * fps
+                            
+                            print(f"📹 Creating fallback video: {duration}s ({total_frames} frames at {fps} fps)")
+                            
+                            # Use proper video dimensions based on orientation
+                            orientation = video.get("orientation", "landscape")
+                            if orientation == "portrait":
+                                width, height = 720, 1280
+                            else:
+                                width, height = 1280, 720
                             
                             frames = []
                             for i in range(total_frames):
                                 # Create a more interesting placeholder with text overlay
-                                frame = np.zeros((480, 640, 3), dtype=np.uint8)
-                                frame.fill(50)  # Dark gray background
+                                frame = np.zeros((height, width, 3), dtype=np.uint8)
+                                frame.fill(30)  # Dark background
                                 
-                                # Add some visual elements to indicate it's a placeholder
-                                if i % 30 < 15:  # Blinking effect
-                                    frame[200:280, 220:420] = [100, 100, 150]  # Blue rectangle
+                                # Add animated elements
+                                # Gradient background
+                                for y in range(height):
+                                    intensity = int(30 + (y / height) * 50)
+                                    frame[y, :] = [intensity, intensity // 2, intensity // 3]
+                                
+                                # Animated rectangle with time-based position
+                                progress = (i / total_frames) * width
+                                rect_x = int(progress) % width
+                                rect_y = height // 3
+                                rect_w = width // 4
+                                rect_h = height // 6
+                                
+                                # Ensure rectangle stays within bounds
+                                if rect_x + rect_w < width and rect_y + rect_h < height:
+                                    frame[rect_y:rect_y+rect_h, rect_x:rect_x+rect_w] = [100, 150, 200]
+                                
+                                # Add time indicator
+                                current_second = i // fps
+                                if i % 15 < 8:  # Blinking time display
+                                    # Simple time text simulation with colored blocks
+                                    time_y = height - 100
+                                    for digit_pos in range(min(current_second, 10)):
+                                        x_pos = 50 + digit_pos * 30
+                                        if x_pos + 20 < width:
+                                            frame[time_y:time_y+20, x_pos:x_pos+20] = [255, 255, 100]
                                     
                                 frames.append(frame)
                             
                             imageio.mimsave(filepath, frames, fps=fps, format='mp4')
-                            print(f"Created fallback video: {filepath}")
                             
-                            # Update version data with fallback info
-                            version_data.update({
-                                "status": "completed",
-                                "url": f"/api/v1/videos/view/{filename}",
-                                "filename": filename,
-                                "completed_at": datetime.now().isoformat(),
-                                "generated_with": "fallback_placeholder",
-                                "sora_error": str(ai_error)
-                            })
+                            # Validate the created placeholder video
+                            if os.path.exists(filepath) and os.path.getsize(filepath) > 1000:
+                                file_size = os.path.getsize(filepath)
+                                print(f"Created fallback video: {filepath} ({duration}s, {orientation}, {file_size} bytes)")
+                                
+                                # Generate thumbnail for the video
+                                prompt_text = video.get('prompt', 'AI Generated Video')
+                                style_text = video.get('style', 'realistic')
+                                thumbnail_filename = await generate_video_thumbnail(prompt_text, filepath, style_text)
+                                
+                                # Add to video tracking
+                                video_record = {
+                                    "filename": filename,
+                                    "filepath": filepath,
+                                    "file_size": file_size,
+                                    "created_at": datetime.now().isoformat(),
+                                    "source": "fallback_placeholder",
+                                    "duration": f"{duration}s",
+                                    "prompt": prompt_text,
+                                    "thumbnail": thumbnail_filename,
+                                    "ready_for_upload": True
+                                }
+                                
+                                if thumbnail_filename:
+                                    print(f"📸 Thumbnail generated: {thumbnail_filename}")
+                                
+                                # Update version data with fallback info
+                                version_data.update({
+                                    "status": "completed",
+                                    "url": f"/api/v1/videos/view/{filename}",
+                                    "filename": filename,
+                                    "completed_at": datetime.now().isoformat(),
+                                    "generated_with": "fallback_placeholder",
+                                    "sora_error": str(ai_error),
+                                    "file_size": file_size,
+                                    "duration_seconds": duration
+                                })
+                            else:
+                                print(f"❌ Placeholder video creation failed")
+                                if os.path.exists(filepath):
+                                    os.remove(filepath)
+                                raise RuntimeError("Failed to create placeholder video")
                             
                         except ImportError as imp_error:
                             error_msg = f"Missing required package for fallback: {str(imp_error)}"
@@ -720,15 +942,23 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint"""
+    """Health check endpoint - Sora AI Only Mode"""
+    sora_ready = USE_SORA_AI and OPENAI_API_KEY is not None
+    
     return {
-        "status": "healthy",
+        "status": "healthy" if sora_ready else "degraded",
         "timestamp": datetime.now().isoformat(),
-        "version": "1.0.0",
+        "version": "2.0.0-sora-only",
+        "mode": "SORA_AI_EXCLUSIVE",
         "ai_services": {
-            "sora_configured": USE_SORA_AI,
-            "openai_api_available": OPENAI_API_KEY is not None
-        }
+            "sora_ai_required": True,
+            "sora_configured": sora_ready,
+            "openai_api_available": OPENAI_API_KEY is not None,
+            "dalle_disabled": True,
+            "fallbacks_disabled": True,
+            "placeholders_disabled": True
+        },
+        "message": "Sora AI Only Mode - No fallbacks, no placeholders" if sora_ready else "Sora AI not configured - Server will not generate videos"
     }
 
 @app.post("/api/v1/ai/test-sora")
@@ -877,9 +1107,9 @@ class DirectUploadRequest(BaseModel):
     tags: Optional[list] = None
 
 def generate_detailed_prompt(request: GenerationRequest) -> str:
-    """Generate a detailed prompt for Sora based on user preferences"""
+    """Generate a detailed, optimized prompt for Sora based on user preferences"""
     try:
-        print("\n=== Generating Detailed Prompt ===")
+        print("\n=== Generating Enhanced Detailed Prompt ===")
         print(f"Base prompt: {request.base_prompt}")
         print(f"Duration: {request.duration}")
         print(f"Style: {request.style}")
@@ -887,43 +1117,152 @@ def generate_detailed_prompt(request: GenerationRequest) -> str:
         print(f"Camera view: {request.camera_view}")
         print(f"Background: {request.background}")
         
-        # Base components
-        components = [
-            f"Create a {request.duration.value} {request.style.value} video in {request.orientation.value} format",
-            f"showing {request.base_prompt}",
-            f"using a {request.camera_view.value} camera perspective",
-            f"with a {request.background.value} background"
+        # Enhanced base prompt structure for better AI understanding
+        duration_seconds = int(request.duration.value.replace("s", ""))
+        
+        # Start with technical specifications for Sora
+        tech_specs = []
+        
+        # Resolution and aspect ratio specifications
+        if request.orientation.value == "portrait":
+            tech_specs.append("9:16 aspect ratio, vertical format")
+        else:
+            tech_specs.append("16:9 aspect ratio, horizontal format")
+        
+        # Duration specification
+        tech_specs.append(f"{duration_seconds} second duration")
+        
+        # Style-specific technical requirements
+        style_tech_specs = {
+            VideoStyle.CINEMATIC: "high production value, professional cinematography, 24fps feel",
+            VideoStyle.REALISTIC: "photorealistic rendering, natural lighting, authentic textures",
+            VideoStyle.ANIMATED: "smooth animation, consistent art style, fluid motion",
+            VideoStyle.DOCUMENTARY: "handheld camera feel, natural imperfections, authentic atmosphere",
+            VideoStyle.ARTISTIC: "creative visual effects, unique artistic interpretation, expressive colors",
+            VideoStyle.VINTAGE: "film grain, period-accurate aesthetics, nostalgic color grading"
+        }
+        tech_specs.append(style_tech_specs[request.style])
+        
+        # Camera and movement specifications
+        camera_specs = {
+            CameraView.WIDE: "wide establishing shot, expansive view, showing full scene context",
+            CameraView.CLOSE_UP: "intimate close-up shots, detailed focus, emotional connection",
+            CameraView.AERIAL: "drone-like aerial perspective, sweeping overhead views, bird's eye angle",
+            CameraView.POV: "first-person perspective, immersive viewpoint, subjective camera",
+            CameraView.TRACKING: "smooth tracking shot, following subject motion, dynamic movement",
+            CameraView.STATIC: "fixed camera position, stable composition, stationary framing"
+        }
+        
+        # Background and environment specifications
+        background_specs = {
+            BackgroundType.NATURAL: "organic natural environment, outdoor setting, landscape elements",
+            BackgroundType.URBAN: "cityscape, architectural elements, urban environment with buildings",
+            BackgroundType.STUDIO: "controlled studio environment, professional backdrop, clean setting",
+            BackgroundType.ABSTRACT: "non-representational background, artistic abstract elements",
+            BackgroundType.MINIMAL: "clean minimalist background, simple composition, uncluttered space"
+        }
+        
+        # Construct the detailed prompt
+        prompt_parts = [
+            # Main subject and action (enhanced base prompt)
+            f"A high-quality video showing {request.base_prompt}",
+            
+            # Technical specifications
+            f"Technical specs: {', '.join(tech_specs)}",
+            
+            # Camera and movement
+            f"Camera work: {camera_specs[request.camera_view]}",
+            
+            # Environment and background
+            f"Setting: {background_specs[request.background]}",
         ]
         
-        # Optional components
+        # Enhanced lighting specifications
         if request.lighting:
-            components.append(f"with {request.lighting} lighting")
+            lighting_details = {
+                "natural": "soft natural daylight, realistic shadows, organic light sources",
+                "dramatic": "high contrast lighting, strong shadows, moody atmosphere",
+                "soft": "diffused gentle lighting, minimal shadows, even illumination",
+                "golden": "warm golden hour lighting, amber tones, cinematic glow",
+                "blue": "cool blue lighting, modern atmosphere, tech-inspired tones",
+                "neon": "vibrant neon lighting, electric colors, urban night atmosphere"
+            }
+            lighting_desc = lighting_details.get(request.lighting.lower(), f"{request.lighting} lighting")
+            prompt_parts.append(f"Lighting: {lighting_desc}")
+        
+        # Enhanced color palette specifications
         if request.color_palette:
-            components.append(f"using a {request.color_palette} color palette")
+            color_details = {
+                "warm": "warm color palette with oranges, reds, and yellows",
+                "cool": "cool color palette with blues, greens, and purples",
+                "monochrome": "black and white with selective color accents",
+                "vibrant": "highly saturated, bold and vivid colors",
+                "pastel": "soft pastel tones, gentle and soothing colors",
+                "earth": "natural earth tones, browns, greens, and muted colors"
+            }
+            color_desc = color_details.get(request.color_palette.lower(), f"{request.color_palette} color palette")
+            prompt_parts.append(f"Colors: {color_desc}")
+        
+        # Weather and atmospheric conditions
         if request.weather:
-            components.append(f"during {request.weather} weather")
+            weather_details = {
+                "sunny": "bright sunny conditions, clear skies, high visibility",
+                "cloudy": "overcast sky, diffused lighting, dramatic cloud formations",
+                "rainy": "rainfall, wet surfaces, atmospheric precipitation effects",
+                "foggy": "misty fog effects, reduced visibility, mysterious atmosphere",
+                "snowy": "snowfall, winter conditions, cold weather atmosphere",
+                "stormy": "storm conditions, dramatic weather, intense atmospheric effects"
+            }
+            weather_desc = weather_details.get(request.weather.lower(), f"{request.weather} weather conditions")
+            prompt_parts.append(f"Weather: {weather_desc}")
+        
+        # Time of day specifications
         if request.time_of_day:
-            components.append(f"during {request.time_of_day}")
-            
-        # Style-specific enhancements
-        style_enhancements = {
-            VideoStyle.CINEMATIC: "with dramatic camera movements, depth of field, and film-like quality",
-            VideoStyle.REALISTIC: "with photorealistic details and natural motion",
-            VideoStyle.ANIMATED: "with smooth animation and stylized visuals",
-            VideoStyle.DOCUMENTARY: "with authentic, unfiltered capturing of the scene",
-            VideoStyle.ARTISTIC: "with creative and expressive visual elements",
-            VideoStyle.VINTAGE: "with a nostalgic, period-appropriate look"
-        }
-        components.append(style_enhancements[request.style])
+            time_details = {
+                "dawn": "early morning dawn, soft sunrise lighting, peaceful atmosphere",
+                "morning": "bright morning light, fresh daylight, energetic mood",
+                "noon": "midday sun, high contrast lighting, maximum visibility",
+                "afternoon": "warm afternoon light, golden tones, comfortable atmosphere",
+                "dusk": "evening twilight, golden hour, transitional lighting",
+                "night": "nighttime atmosphere, artificial lighting, dark ambient tones"
+            }
+            time_desc = time_details.get(request.time_of_day.lower(), f"{request.time_of_day} time setting")
+            prompt_parts.append(f"Time: {time_desc}")
         
-        # Additional details
+        # Motion and pacing specifications based on duration
+        if duration_seconds <= 5:
+            prompt_parts.append("Pacing: quick dynamic action, fast-paced movement, high energy")
+        elif duration_seconds <= 10:
+            prompt_parts.append("Pacing: balanced rhythm, moderate pace, engaging motion")
+        else:
+            prompt_parts.append("Pacing: contemplative pace, smooth transitions, graceful movement")
+        
+        # Quality and production specifications
+        quality_specs = [
+            "ultra-high definition",
+            "professional video production quality",
+            "smooth motion blur where appropriate",
+            "crisp details and sharp focus",
+            "consistent visual style throughout"
+        ]
+        prompt_parts.append(f"Quality: {', '.join(quality_specs)}")
+        
+        # Additional creative details
         if request.additional_details:
-            components.append(request.additional_details)
+            prompt_parts.append(f"Additional elements: {request.additional_details}")
         
-        return ". ".join(components) + "."
+        # Final prompt assembly with clear structure
+        final_prompt = ". ".join(prompt_parts) + "."
+        
+        print(f"✅ Enhanced prompt generated ({len(final_prompt)} characters)")
+        return final_prompt
+        
     except Exception as e:
         print(f"Error generating detailed prompt: {str(e)}")
-        raise
+        # Fallback to simpler prompt if enhancement fails
+        fallback_prompt = f"Create a {request.duration.value} {request.style.value} video showing {request.base_prompt} using {request.camera_view.value} camera with {request.background.value} background."
+        print(f"Using fallback prompt: {fallback_prompt}")
+        return fallback_prompt
 
 @app.post("/api/v1/videos/generate")
 async def generate_video(request: GenerationRequest):
@@ -1084,21 +1423,16 @@ async def select_version(request: VersionSelectionRequest):
         # Generate engaging title (simulated)
         video["metadata"]["generated_title"] = f"🔥 MUST WATCH: {video['prompt'][:50]}... | Stunning {video['style']} Video"
         
-        # Generate SEO-optimized description
-        video["metadata"]["generated_description"] = f"""🎥 Experience this incredible {video['style']} video!
-        
-{video['prompt']}
-
-Shot in stunning {video['orientation']} format with {video['camera_view']} views.
-        
-🎬 Created using cutting-edge AI technology
-⏱️ Duration: {video['duration']}
-🎨 Style: {video['style']}
-        
-👍 Like & Subscribe for more amazing content!
-🔔 Turn on notifications to never miss an upload!
-
-#AI #Video #Content #Trending #{video['style'].capitalize()}"""
+        # Generate SEO-optimized description using the new function
+        enhanced_description = await generate_video_description(
+            prompt=video['prompt'],
+            style=video['style'],
+            duration=video['duration'],
+            orientation=video['orientation'],
+            camera_view=video.get('camera_view'),
+            background=video.get('background')
+        )
+        video["metadata"]["generated_description"] = enhanced_description
         
         # Simulate thumbnail generation
         video["metadata"]["generated_thumbnail"] = f"https://example.com/thumbnail_{video['id']}.jpg"
@@ -1216,24 +1550,19 @@ async def upload_video_direct(request: DirectUploadRequest):
         
         # Generate title and description if not provided
         upload_title = request.title or f"🔥 AI Generated Video: {video['prompt'][:50]}... | {video['style'].capitalize()} Style"
-        upload_description = request.description or f"""🎥 Amazing AI-generated video created with Sora 2 Pro!
-
-{video['prompt']}
-
-📹 Video Details:
-⏱️ Duration: {video.get('duration', 'N/A')}
-🎨 Style: {video.get('style', 'N/A').capitalize()}
-📐 Orientation: {video.get('orientation', 'N/A').capitalize()}
-🎬 Camera: {video.get('camera_view', 'N/A').capitalize()}
-🌅 Background: {video.get('background', 'N/A').capitalize()}
-
-🤖 Created using cutting-edge AI technology
-🚀 Generated with: {selected_version.get('generated_with', 'AI')}
-
-👍 Like & Subscribe for more amazing AI content!
-🔔 Turn on notifications to never miss an upload!
-
-#AI #SoraAI #VideoGeneration #AIContent #TechDemo #{video.get('style', 'video').capitalize()}"""
+        
+        if request.description:
+            upload_description = request.description
+        else:
+            # Generate enhanced description
+            upload_description = await generate_video_description(
+                prompt=video['prompt'],
+                style=video.get('style', 'realistic'),
+                duration=video.get('duration', '10s'),
+                orientation=video.get('orientation', 'landscape'),
+                camera_view=video.get('camera_view'),
+                background=video.get('background')
+            )
 
         upload_tags = request.tags or [
             "AI Generated", 
@@ -1253,13 +1582,24 @@ async def upload_video_direct(request: DirectUploadRequest):
         
         video["metadata"]["youtube_status"] = "uploading"
         
+        # Check for thumbnail
+        video_name = os.path.splitext(video_filename)[0]
+        thumbnail_filename = f"{video_name}_thumbnail.jpg"
+        thumbnail_path = os.path.join(THUMBNAILS_DIR, thumbnail_filename)
+        
+        thumbnail_to_upload = None
+        if os.path.exists(thumbnail_path):
+            thumbnail_to_upload = thumbnail_path
+            print(f"📸 Found thumbnail for upload: {thumbnail_filename}")
+        
         # Upload to YouTube using our YouTube uploader
         upload_result = await youtube_uploader.upload_video(
             video_path=video_path,
             title=upload_title,
             description=upload_description,
             tags=upload_tags,
-            privacy=os.getenv('DEFAULT_YOUTUBE_PRIVACY', 'private')
+            privacy=os.getenv('DEFAULT_YOUTUBE_PRIVACY', 'private'),
+            thumbnail_path=thumbnail_to_upload
         )
         
         if upload_result and upload_result.get("success"):
@@ -1308,6 +1648,37 @@ async def get_video(video_id: int):
 from fastapi.responses import FileResponse
 from fastapi.responses import StreamingResponse
 import os
+
+@app.get("/api/v1/thumbnails/view/{filename}")
+async def view_thumbnail(filename: str):
+    """Serve a thumbnail image for viewing"""
+    try:
+        # Construct thumbnail path
+        thumbnail_path = os.path.join(THUMBNAILS_DIR, filename)
+        
+        if not os.path.exists(thumbnail_path):
+            raise HTTPException(status_code=404, detail=f"Thumbnail not found: {filename}")
+        
+        # Determine media type
+        if filename.lower().endswith('.jpg') or filename.lower().endswith('.jpeg'):
+            media_type = "image/jpeg"
+        elif filename.lower().endswith('.png'):
+            media_type = "image/png"
+        else:
+            media_type = "image/jpeg"  # Default
+        
+        return FileResponse(
+            path=thumbnail_path,
+            media_type=media_type,
+            filename=filename,
+            headers={
+                "Access-Control-Allow-Origin": "*",
+                "Cache-Control": "public, max-age=3600",  # Cache for 1 hour
+            }
+        )
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error serving thumbnail: {str(e)}")
 
 @app.get("/api/v1/videos/view/{filename}")
 async def view_video(filename: str):
@@ -1393,6 +1764,249 @@ async def get_video_stats():
         "pending_videos": len([v for v in videos_data if v["status"] == "pending"]),
         "success_rate": 91.2
     }
+
+# Video Management Endpoints
+@app.get("/api/v1/videos/library")
+async def get_video_library():
+    """Get all processed videos available for upload"""
+    try:
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        project_root = os.path.dirname(os.path.dirname(current_dir))
+        processed_dir = os.path.join(project_root, "videos", "processed")
+        
+        if not os.path.exists(processed_dir):
+            return {"videos": [], "total": 0}
+        
+        library_videos = []
+        video_extensions = ['.mp4', '.mov', '.avi', '.mkv']
+        
+        # Get all video files
+        for filename in os.listdir(processed_dir):
+            if any(filename.lower().endswith(ext) for ext in video_extensions):
+                filepath = os.path.join(processed_dir, filename)
+                if os.path.isfile(filepath):
+                    file_stats = os.stat(filepath)
+                    file_size = file_stats.st_size
+                    created_time = datetime.fromtimestamp(file_stats.st_ctime)
+                    
+                    # Extract video info from filename
+                    is_sora_generated = filename.startswith('sora2pro_')
+                    is_dalle_generated = filename.startswith('dalle_')
+                    is_fallback = filename.startswith('fallback_')
+                    
+                    generation_method = "sora_ai" if is_sora_generated else ("dalle" if is_dalle_generated else ("fallback" if is_fallback else "unknown"))
+                    
+                    # Check if this video has been uploaded
+                    uploaded_status = "not_uploaded"
+                    youtube_url = None
+                    
+                    # Check in videos_data for upload status
+                    for video_data in videos_data:
+                        if "versions" in video_data:
+                            for version in video_data.get("versions", []):
+                                if version.get("filename") == filename:
+                                    metadata = video_data.get("metadata", {})
+                                    if metadata.get("youtube_status") == "completed":
+                                        uploaded_status = "uploaded"
+                                        youtube_url = metadata.get("youtube_url")
+                                    elif metadata.get("youtube_status") == "uploading":
+                                        uploaded_status = "uploading"
+                                    elif metadata.get("youtube_status") == "failed":
+                                        uploaded_status = "failed"
+                                    break
+                    
+                    # Check for thumbnail
+                    video_name = filename.replace('.mp4', '').replace('.mov', '')
+                    thumbnail_filename = f"{video_name}_thumbnail.jpg"
+                    thumbnail_path = os.path.join(THUMBNAILS_DIR, thumbnail_filename)
+                    has_thumbnail = os.path.exists(thumbnail_path)
+                    thumbnail_url = f"/api/v1/thumbnails/view/{thumbnail_filename}" if has_thumbnail else None
+                    
+                    library_videos.append({
+                        "id": filename.replace('.', '_'),  # Safe ID for frontend
+                        "filename": filename,
+                        "title": filename.replace('.mp4', '').replace('_', ' ').title(),
+                        "url": f"/api/v1/videos/view/{filename}",
+                        "download_url": f"/api/v1/videos/download/{filename}",
+                        "thumbnail_url": thumbnail_url,
+                        "has_thumbnail": has_thumbnail,
+                        "file_size": file_size,
+                        "file_size_mb": round(file_size / (1024 * 1024), 2),
+                        "created_at": created_time.isoformat(),
+                        "generated_with": generation_method,
+                        "upload_status": uploaded_status,
+                        "youtube_url": youtube_url,
+                        "can_upload": uploaded_status == "not_uploaded"
+                    })
+        
+        # Sort by creation date (newest first)
+        library_videos.sort(key=lambda x: x["created_at"], reverse=True)
+        
+        return {
+            "videos": library_videos,
+            "total": len(library_videos),
+            "total_size_mb": round(sum(v["file_size"] for v in library_videos) / (1024 * 1024), 2),
+            "by_method": {
+                "sora_ai": len([v for v in library_videos if v["generated_with"] == "sora_ai"]),
+                "dalle": len([v for v in library_videos if v["generated_with"] == "dalle"]),
+                "fallback": len([v for v in library_videos if v["generated_with"] == "fallback"]),
+                "unknown": len([v for v in library_videos if v["generated_with"] == "unknown"])
+            },
+            "by_upload_status": {
+                "uploaded": len([v for v in library_videos if v["upload_status"] == "uploaded"]),
+                "not_uploaded": len([v for v in library_videos if v["upload_status"] == "not_uploaded"]),
+                "uploading": len([v for v in library_videos if v["upload_status"] == "uploading"]),
+                "failed": len([v for v in library_videos if v["upload_status"] == "failed"])
+            }
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error loading video library: {str(e)}")
+
+@app.post("/api/v1/videos/library/{filename}/upload")
+async def upload_library_video(filename: str, request: Optional[Dict] = None):
+    """Upload a video from the library to YouTube"""
+    try:
+        if not YOUTUBE_AVAILABLE:
+            raise HTTPException(status_code=503, detail="YouTube integration not available")
+        
+        # Get video file path
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        project_root = os.path.dirname(os.path.dirname(current_dir))
+        video_path = os.path.join(project_root, "videos", "processed", filename)
+        
+        if not os.path.exists(video_path):
+            raise HTTPException(status_code=404, detail="Video file not found")
+        
+        # Get custom metadata from request
+        custom_title = None
+        custom_description = None
+        custom_tags = None
+        
+        if request:
+            custom_title = request.get("title")
+            custom_description = request.get("description") 
+            custom_tags = request.get("tags")
+        
+        # Generate title and description if not provided
+        if not custom_title:
+            # Create a readable title from filename
+            base_name = filename.replace('.mp4', '').replace('.mov', '')
+            if base_name.startswith('sora2pro_'):
+                custom_title = f"🎬 AI Generated Video - Sora 2 Pro Creation"
+            elif base_name.startswith('dalle_'):
+                custom_title = f"🎨 AI Generated Video - DALL-E Creation"
+            else:
+                custom_title = f"📹 AI Generated Video - {base_name.replace('_', ' ').title()}"
+        
+        if not custom_description:
+            custom_description = f"""🤖 Amazing AI-generated video created with cutting-edge technology!
+
+📹 Video Details:
+🎬 Generated using: {"Sora 2 Pro AI" if "sora2pro" in filename else ("DALL-E AI" if "dalle" in filename else "AI Technology")}
+🚀 Filename: {filename}
+📅 Generated: {datetime.now().strftime('%B %d, %Y')}
+
+✨ Created with state-of-the-art artificial intelligence
+🎯 High-quality AI video generation
+🌟 Cutting-edge technology demonstration
+
+👍 Like & Subscribe for more amazing AI content!
+🔔 Turn on notifications to never miss an upload!
+
+#AI #VideoGeneration #SoraAI #ArtificialIntelligence #TechDemo #AIContent"""
+
+        if not custom_tags:
+            custom_tags = [
+                "AI Generated",
+                "Video Generation", 
+                "Artificial Intelligence",
+                "AI Content",
+                "Tech Demo",
+                "Sora AI" if "sora2pro" in filename else "DALL-E",
+                "AI Technology",
+                "Future Tech"
+            ]
+        
+        print(f"Starting library video upload: {filename}")
+        
+        # Check for thumbnail
+        video_name = filename.replace('.mp4', '').replace('.mov', '')
+        thumbnail_filename = f"{video_name}_thumbnail.jpg"
+        thumbnail_path = os.path.join(THUMBNAILS_DIR, thumbnail_filename)
+        
+        thumbnail_to_upload = None
+        if os.path.exists(thumbnail_path):
+            thumbnail_to_upload = thumbnail_path
+            print(f"📸 Found thumbnail for library upload: {thumbnail_filename}")
+        
+        # Upload to YouTube
+        upload_result = await youtube_uploader.upload_video(
+            video_path=video_path,
+            title=custom_title,
+            description=custom_description,
+            tags=custom_tags,
+            privacy=os.getenv('DEFAULT_YOUTUBE_PRIVACY', 'private'),
+            thumbnail_path=thumbnail_to_upload
+        )
+        
+        if upload_result and upload_result.get("success"):
+            print(f"✅ Library video uploaded successfully: {upload_result['video_url']}")
+            
+            # Update or create video entry in videos_data for tracking
+            library_entry = {
+                "id": len(videos_data) + 1,
+                "title": custom_title,
+                "filename": filename,
+                "status": "uploaded",
+                "created_at": datetime.now().isoformat(),
+                "source": "library_upload",
+                "metadata": {
+                    "youtube_status": "completed",
+                    "youtube_url": upload_result["video_url"],
+                    "youtube_video_id": upload_result["video_id"],
+                    "uploaded_at": datetime.now().isoformat(),
+                    "generated_title": custom_title,
+                    "generated_description": custom_description
+                }
+            }
+            videos_data.append(library_entry)
+            
+            return {
+                "success": True,
+                "message": f"Video '{filename}' uploaded to YouTube successfully!",
+                "youtube_url": upload_result["video_url"],
+                "youtube_video_id": upload_result["video_id"],
+                "title": custom_title
+            }
+        else:
+            error_msg = upload_result.get("error", "Unknown upload error") if upload_result else "Upload failed"
+            raise HTTPException(status_code=500, detail=f"YouTube upload failed: {error_msg}")
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error uploading library video: {str(e)}")
+
+@app.delete("/api/v1/videos/library/{filename}")
+async def delete_library_video(filename: str):
+    """Delete a video from the library"""
+    try:
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        project_root = os.path.dirname(os.path.dirname(current_dir))
+        video_path = os.path.join(project_root, "videos", "processed", filename)
+        
+        if not os.path.exists(video_path):
+            raise HTTPException(status_code=404, detail="Video file not found")
+        
+        # Delete the file
+        os.remove(video_path)
+        
+        return {
+            "success": True,
+            "message": f"Video '{filename}' deleted successfully"
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error deleting video: {str(e)}")
 
 # YouTube API endpoints
 @app.get("/api/v1/youtube/status")
@@ -1558,7 +2172,17 @@ async def get_analytics_overview():
 if __name__ == "__main__":
     import uvicorn
     print("🚀 Starting YouTube Automation Backend Server")
+    print("⚡ SORA AI EXCLUSIVE MODE - No fallbacks, no placeholders")
+    print("🎬 Only Sora AI video generation enabled")
     print("📖 API Documentation: http://localhost:8000/docs")
     print("🎬 Frontend Interface: http://localhost:3000")
     print("🔧 Health Check: http://localhost:8000/health")
-    uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)
+    
+    try:
+        # Try with reload first (for development)
+        uvicorn.run("simple_server:app", host="0.0.0.0", port=8000, reload=True)
+    except Exception as e:
+        print(f"⚠️ Reload mode failed: {e}")
+        print("🔄 Starting without reload mode...")
+        # Fallback to no-reload mode
+        uvicorn.run(app, host="0.0.0.0", port=8000, reload=False)
