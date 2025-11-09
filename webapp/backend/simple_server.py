@@ -869,6 +869,13 @@ class YouTubeUploadRequest(BaseModel):
     video_id: int
     upload: bool  # Whether to proceed with upload
 
+class DirectUploadRequest(BaseModel):
+    video_id: int
+    version_index: int  # 0, 1, or 2
+    title: Optional[str] = None
+    description: Optional[str] = None
+    tags: Optional[list] = None
+
 def generate_detailed_prompt(request: GenerationRequest) -> str:
     """Generate a detailed prompt for Sora based on user preferences"""
     try:
@@ -1017,35 +1024,45 @@ async def generate_video(request: GenerationRequest):
 
 @app.get("/api/v1/videos/jobs")
 async def get_generation_jobs():
-    """Get all generation jobs"""
+    """Get all generation jobs with all versions"""
     jobs = []
     for v in videos_data:
         if "job_id" in v:
             job = {
                 "job_id": v["job_id"],
+                "video_id": v["id"],
                 "prompt": v["prompt"],
                 "style": v["style"],
                 "status": v["status"],
                 "started_at": v["created_at"],
+                "versions": []
             }
             
-            # Add video information if the job is completed
-            if v["status"] == "completed":
-                # Use the first version's filename if available
-                if "versions" in v and len(v["versions"]) > 0:
-                    filename = v["versions"][0]["filename"]
-                else:
-                    filename = v.get("filename")
+            # Add all video versions if the job is completed
+            if v["status"] == "completed" and "versions" in v:
+                base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
                 
-                if filename:
-                    job["video"] = {
-                        "id": v["id"],
-                        "filename": filename
-                    }
-                    # Check if the video file exists
-                    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-                    video_path = os.path.join(base_dir, "videos", "processed", filename)
-                    print(f"Checking video exists at: {video_path}")
+                for idx, version in enumerate(v["versions"]):
+                    if version.get("status") == "completed" and version.get("filename"):
+                        video_path = os.path.join(base_dir, "videos", "processed", version["filename"])
+                        file_exists = os.path.exists(video_path)
+                        
+                        job["versions"].append({
+                            "version": idx,
+                            "filename": version["filename"],
+                            "url": f"/api/v1/videos/view/{version['filename']}",
+                            "status": version["status"],
+                            "generated_with": version.get("generated_with", "unknown"),
+                            "file_exists": file_exists,
+                            "completed_at": version.get("completed_at")
+                        })
+                        
+                        print(f"Version {idx} - {version['filename']} exists: {file_exists}")
+                        
+                # Add metadata if available
+                if "metadata" in v:
+                    job["metadata"] = v["metadata"]
+                    
             jobs.append(job)
     
     return {"jobs": jobs}
@@ -1163,6 +1180,113 @@ async def youtube_upload(request: YouTubeUploadRequest):
         
     except Exception as e:
         video["metadata"]["youtube_status"] = "failed"
+        raise AIErrorHTTP(f"Error uploading to YouTube: {str(e)}", status_code=500)
+
+@app.post("/api/v1/videos/upload-direct")
+async def upload_video_direct(request: DirectUploadRequest):
+    """Upload a specific video version directly to YouTube without pre-selection"""
+    video = next((v for v in videos_data if v["id"] == request.video_id), None)
+    if not video:
+        raise AIErrorHTTP("Video not found", status_code=404)
+    
+    if request.version_index not in [0, 1, 2]:
+        raise AIErrorHTTP("Invalid version index. Must be 0, 1, or 2", status_code=400)
+    
+    if not YOUTUBE_AVAILABLE:
+        raise AIErrorHTTP("YouTube integration not available. Please check configuration.", status_code=503)
+    
+    try:
+        # Check if video has versions
+        if not video.get("versions") or len(video["versions"]) <= request.version_index:
+            raise AIErrorHTTP("Requested version not found", status_code=400)
+        
+        selected_version = video["versions"][request.version_index]
+        video_filename = selected_version.get("filename")
+        
+        if not video_filename or selected_version.get("status") != "completed":
+            raise AIErrorHTTP("Video version not ready or filename missing", status_code=400)
+        
+        # Get video file path
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        project_root = os.path.dirname(os.path.dirname(current_dir))
+        video_path = os.path.join(project_root, "videos", "processed", video_filename)
+        
+        if not os.path.exists(video_path):
+            raise AIErrorHTTP(f"Video file not found: {video_filename}", status_code=404)
+        
+        # Generate title and description if not provided
+        upload_title = request.title or f"🔥 AI Generated Video: {video['prompt'][:50]}... | {video['style'].capitalize()} Style"
+        upload_description = request.description or f"""🎥 Amazing AI-generated video created with Sora 2 Pro!
+
+{video['prompt']}
+
+📹 Video Details:
+⏱️ Duration: {video.get('duration', 'N/A')}
+🎨 Style: {video.get('style', 'N/A').capitalize()}
+📐 Orientation: {video.get('orientation', 'N/A').capitalize()}
+🎬 Camera: {video.get('camera_view', 'N/A').capitalize()}
+🌅 Background: {video.get('background', 'N/A').capitalize()}
+
+🤖 Created using cutting-edge AI technology
+🚀 Generated with: {selected_version.get('generated_with', 'AI')}
+
+👍 Like & Subscribe for more amazing AI content!
+🔔 Turn on notifications to never miss an upload!
+
+#AI #SoraAI #VideoGeneration #AIContent #TechDemo #{video.get('style', 'video').capitalize()}"""
+
+        upload_tags = request.tags or [
+            "AI Generated", 
+            "Sora AI", 
+            "Video Generation", 
+            "AI Content",
+            video.get('style', 'video').capitalize(),
+            "Tech Demo",
+            "Artificial Intelligence"
+        ]
+        
+        print(f"Starting direct YouTube upload for video {request.video_id}, version {request.version_index}")
+        
+        # Initialize metadata if not exists
+        if "metadata" not in video:
+            video["metadata"] = {}
+        
+        video["metadata"]["youtube_status"] = "uploading"
+        
+        # Upload to YouTube using our YouTube uploader
+        upload_result = await youtube_uploader.upload_video(
+            video_path=video_path,
+            title=upload_title,
+            description=upload_description,
+            tags=upload_tags,
+            privacy=os.getenv('DEFAULT_YOUTUBE_PRIVACY', 'private')
+        )
+        
+        if upload_result and upload_result.get("success"):
+            video["metadata"]["youtube_status"] = "completed"
+            video["metadata"]["youtube_url"] = upload_result["video_url"]
+            video["metadata"]["youtube_video_id"] = upload_result["video_id"]
+            video["metadata"]["uploaded_version"] = request.version_index
+            video["metadata"]["uploaded_at"] = datetime.now().isoformat()
+            
+            print(f"✅ Direct upload successful: {upload_result['video_url']}")
+            
+            return {
+                "success": True,
+                "message": f"Video version {request.version_index + 1} uploaded to YouTube successfully!",
+                "youtube_url": upload_result["video_url"],
+                "youtube_video_id": upload_result["video_id"],
+                "uploaded_version": request.version_index,
+                "title": upload_title
+            }
+        else:
+            video["metadata"]["youtube_status"] = "failed"
+            error_msg = upload_result.get("error", "Unknown upload error") if upload_result else "Upload failed"
+            raise AIErrorHTTP(f"YouTube upload failed: {error_msg}", status_code=500)
+        
+    except Exception as e:
+        if "metadata" in video:
+            video["metadata"]["youtube_status"] = "failed"
         raise AIErrorHTTP(f"Error uploading to YouTube: {str(e)}", status_code=500)
 
 @app.get("/api/v1/videos/")

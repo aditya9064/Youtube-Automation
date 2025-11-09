@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { 
   Sparkles, 
- 
   Play, 
   Clock, 
   CheckCircle, 
@@ -14,6 +13,7 @@ import {
 import { useAppStore, useAIJobs } from '../store';
 import { GenerationRequest, AIJob } from '../types';
 import { toast } from 'react-hot-toast';
+import { VideoVersionGrid } from '../components/VideoVersionGrid';
 
 const ORIENTATION_OPTIONS = [
   { value: 'portrait', label: 'Portrait', description: 'Vertical 9:16 format, ideal for mobile' },
@@ -532,7 +532,21 @@ export function AIGeneration() {
                   </div>
 
                   {/* Job Results */}
-                  {job.status === 'completed' && job.video && (
+                  {job.status === 'completed' && job.versions && job.versions.length > 0 && (
+                    <div className="bg-green-50 border border-green-200 rounded p-3">
+                      <VideoVersionGrid
+                        jobId={job.job_id}
+                        videoId={job.video_id || 0}
+                        versions={job.versions}
+                        onUploadSuccess={(versionIndex, _youtubeUrl) => {
+                          toast.success(`Version ${versionIndex + 1} uploaded to YouTube!`);
+                        }}
+                      />
+                    </div>
+                  )}
+
+                  {/* Fallback for old video format */}
+                  {job.status === 'completed' && job.video && !job.versions && (
                     <div className="bg-green-50 border border-green-200 rounded p-3">
                       <div className="flex items-center justify-between">
                         <div>

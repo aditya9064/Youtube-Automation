@@ -12,8 +12,18 @@ export interface VideoFile {
   status?: 'pending' | 'processing' | 'completed' | 'error';
 }
 
+export interface VideoVersion {
+  filename: string;
+  url: string;
+  status: 'completed' | 'generating' | 'failed';
+  generated_with: string;
+  file_exists: boolean;
+  completed_at?: string;
+}
+
 export interface AIJob {
   job_id: string;
+  video_id?: number;
   status: 'starting' | 'generating' | 'processing' | 'rendering' | 'completed' | 'failed' | 'error';
   prompt?: string;
   base_prompt: string;
@@ -30,11 +40,7 @@ export interface AIJob {
   started_at: string;
   completed_at?: string;
   error?: string;
-  versions?: Array<{
-    id: string;
-    status: string;
-    url?: string;
-  }>;
+  versions?: VideoVersion[];
   selected_version?: number;
   video?: {
     success: boolean;
@@ -105,6 +111,22 @@ export interface VideoMetadata {
   tags: string[];
   category: string;
   privacy?: 'public' | 'unlisted' | 'private';
+}
+
+export interface YouTubeUploadRequest {
+  video_id: number;
+  version_index: number;
+  title?: string;
+  description?: string;
+  tags?: string[];
+}
+
+export interface YouTubeUploadResponse {
+  success: boolean;
+  video_id?: string;
+  youtube_url?: string;
+  message?: string;
+  error?: string;
 }
 
 export interface UploadProgress {
