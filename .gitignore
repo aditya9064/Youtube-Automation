@@ -130,13 +130,31 @@ dmypy.json
 
 # Project specific
 config/token.json
+config/youtube_token.json
+config/youtube_credentials.json
 logs/
-videos/
+videos/processed/
+videos/input/
 *.mov
 *.mp4
 *.avi
 *.mkv
 *.webm
+
+# Node.js and frontend
+node_modules/
+webapp/frontend/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.eslintcache
+dist/
+
+# Server logs
+server.log
+server_*.log
+youtube_server*.log
+frontend.log
 
 # macOS
 .DS_Store
