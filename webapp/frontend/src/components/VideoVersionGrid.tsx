@@ -151,13 +151,13 @@ export function VideoVersionGrid({ jobId, videoId, versions, onUploadSuccess }: 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold text-gray-900">Generated Videos</h3>
+        <h3 className="text-lg font-semibold text-gray-900">Generated Video</h3>
         <span className="text-sm text-gray-500">
-          {versions.filter(v => v.status === 'completed').length} of {versions.length} completed
+          {versions.filter(v => v.status === 'completed').length > 0 ? 'Completed' : 'Generating...'}
         </span>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 gap-4">
         {versions.map((version, index) => (
           <div
             key={index}
@@ -172,7 +172,7 @@ export function VideoVersionGrid({ jobId, videoId, versions, onUploadSuccess }: 
                 </span>
               </div>
               <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
-                Version {index + 1}
+                AI Generated
               </span>
             </div>
 

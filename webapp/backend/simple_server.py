@@ -383,7 +383,7 @@ class AIErrorHTTP(HTTPException):
 
 # Process video generation
 async def process_video_generation(video: Dict[str, Any]):
-    """Async task to handle video generation process for multiple versions"""
+    """Async task to handle video generation process for a single version"""
     try:
         print("\n=== Starting Video Generation Processing ===")
         print(f"Starting job {video.get('job_id')} for video {video.get('id')}")
@@ -419,7 +419,7 @@ async def process_video_generation(video: Dict[str, Any]):
         # Setup video metadata and tracking
         try:
             # Initialize version tracking
-            video["version_statuses"] = {i: "pending" for i in range(3)}
+            video["version_statuses"] = {i: "pending" for i in range(1)}
             video["processed_dir"] = processed_dir
             video["versions"] = []
             print(f"Initialized version tracking")
@@ -553,7 +553,7 @@ async def process_video_generation(video: Dict[str, Any]):
 
         # Process all versions
         try:
-            version_tasks = [process_version(i) for i in range(3)]
+            version_tasks = [process_version(i) for i in range(1)]
             completed_versions = await asyncio.gather(*version_tasks, return_exceptions=True)
             
             # Process results
@@ -863,7 +863,7 @@ class GenerationRequest(BaseModel):
 
 class VersionSelectionRequest(BaseModel):
     video_id: int
-    version: int  # 0, 1, or 2
+    version: int  # 0 only (single version)
 
 class YouTubeUploadRequest(BaseModel):
     video_id: int
@@ -871,7 +871,7 @@ class YouTubeUploadRequest(BaseModel):
 
 class DirectUploadRequest(BaseModel):
     video_id: int
-    version_index: int  # 0, 1, or 2
+    version_index: int  # 0 only (single version)
     title: Optional[str] = None
     description: Optional[str] = None
     tags: Optional[list] = None
@@ -927,7 +927,7 @@ def generate_detailed_prompt(request: GenerationRequest) -> str:
 
 @app.post("/api/v1/videos/generate")
 async def generate_video(request: GenerationRequest):
-    """Generate multiple versions of a video"""
+    """Generate a single version of a video"""
     try:
         print("\n=== Starting New Video Generation ===")
         print(f"Request parameters: {request.dict()}")
@@ -1074,8 +1074,8 @@ async def select_version(request: VersionSelectionRequest):
     if not video:
         raise AIErrorHTTP("Video not found", status_code=404)
     
-    if request.version not in [0, 1, 2]:
-        raise AIErrorHTTP("Invalid version number", status_code=400)
+    if request.version not in [0]:
+        raise AIErrorHTTP("Invalid version number. Must be 0", status_code=400)
     
     try:
         # Update selected version
@@ -1189,8 +1189,8 @@ async def upload_video_direct(request: DirectUploadRequest):
     if not video:
         raise AIErrorHTTP("Video not found", status_code=404)
     
-    if request.version_index not in [0, 1, 2]:
-        raise AIErrorHTTP("Invalid version index. Must be 0, 1, or 2", status_code=400)
+    if request.version_index not in [0]:
+        raise AIErrorHTTP("Invalid version index. Must be 0", status_code=400)
     
     if not YOUTUBE_AVAILABLE:
         raise AIErrorHTTP("YouTube integration not available. Please check configuration.", status_code=503)
