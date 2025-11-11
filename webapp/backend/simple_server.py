@@ -31,8 +31,10 @@ for dir_path in [VIDEOS_DIR, INPUT_DIR, PROCESSED_DIR, THUMBNAILS_DIR]:
 
 print(f"📁 Video storage structure initialized at: {VIDEOS_DIR}")
 
-# Load environment variables silently
-load_dotenv()
+# Load environment variables from the project root
+env_path = os.path.join(BASE_DIR, '.env')
+load_dotenv(env_path)
+print(f"🔧 Loading environment variables from: {env_path}")
 
 # Add parent directory for automation imports
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))

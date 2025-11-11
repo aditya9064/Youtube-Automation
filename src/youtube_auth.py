@@ -53,22 +53,32 @@ class YouTubeAPI:
                     creds = None
                     
             if not creds:
-                # Create credentials file for OAuth flow
-                client_config = {
-                    "installed": {
-                        "client_id": os.getenv('GOOGLE_CLIENT_ID'),
-                        "client_secret": os.getenv('GOOGLE_CLIENT_SECRET'),
-                        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                        "token_uri": "https://oauth2.googleapis.com/token",
-                        "redirect_uris": ["http://localhost"]
+                # Use credentials file for OAuth flow
+                credentials_file = 'credentials.json'
+                
+                if os.path.exists(credentials_file):
+                    flow = InstalledAppFlow.from_client_secrets_file(credentials_file, self.scopes)
+                    # Use a specific port to match redirect URIs
+                    creds = flow.run_local_server(port=9000)
+                else:
+                    # Fallback to environment variables
+                    client_config = {
+                        "installed": {
+                            "client_id": os.getenv('GOOGLE_CLIENT_ID'),
+                            "client_secret": os.getenv('GOOGLE_CLIENT_SECRET'),
+                            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                            "token_uri": "https://oauth2.googleapis.com/token",
+                            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+                            "redirect_uris": ["http://localhost"]
+                        }
                     }
-                }
-                
-                if not client_config["installed"]["client_id"] or not client_config["installed"]["client_secret"]:
-                    raise ValueError("Please set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in your .env file")
-                
-                flow = InstalledAppFlow.from_client_config(client_config, self.scopes)
-                creds = flow.run_local_server(port=0)
+                    
+                    if not client_config["installed"]["client_id"] or not client_config["installed"]["client_secret"]:
+                        raise ValueError("Please set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in your .env file")
+                    
+                    flow = InstalledAppFlow.from_client_config(client_config, self.scopes)
+                    # Use a specific port to match redirect URIs
+                    creds = flow.run_local_server(port=9000)
                 self.logger.info("New authentication completed")
                 
             # Save credentials for future use
