@@ -1,3 +1,8 @@
+# Ignore secret and credential files
+PROJECT_CREDENTIALS_AND_SECRETS.txt
+client_secret_*.json
+credentials.json
+webapp/backend/config/youtube_credentials.json
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
