@@ -799,7 +799,7 @@ async def process_video_generation(video: Dict[str, Any]):
             
             # Update video status
             video["versions"] = successful_versions + failed_versions
-            
+
             if successful_versions:
                 video["status"] = "completed"
                 video["filename"] = successful_versions[0]["filename"]
@@ -809,7 +809,7 @@ async def process_video_generation(video: Dict[str, Any]):
                 video["status"] = "failed"
                 video["error"] = "No versions were successfully generated"
                 print(f"Video processing failed: no successful versions")
-            
+
             # Add metadata
             video["metadata"] = {
                 "selected_version": None,
@@ -818,6 +818,14 @@ async def process_video_generation(video: Dict[str, Any]):
                 "generated_thumbnail": None,
                 "youtube_status": "pending"
             }
+
+            # Persist the updated video metadata (filename, versions, status, etc.)
+            global videos_data
+            for idx, v in enumerate(videos_data):
+                if v.get("job_id") == video.get("job_id"):
+                    videos_data[idx] = video
+                    break
+            save_video_library(videos_data)
             
         except Exception as gather_error:
             error_msg = f"Error processing versions: {str(gather_error)}"
@@ -891,45 +899,36 @@ async def websocket_endpoint(websocket: WebSocket):
         print(f"WebSocket error: {e}")
         manager.disconnect(websocket)
 
-# In-memory storage for demo
+
+# Persistent video library file
+VIDEO_LIBRARY_PATH = os.path.join(VIDEOS_DIR, "video_library.json")
+
+def load_video_library():
+    if os.path.exists(VIDEO_LIBRARY_PATH):
+        with open(VIDEO_LIBRARY_PATH, "r") as f:
+            try:
+                return json.load(f)
+            except Exception:
+                return []
+    return []
+
+def save_video_library(library):
+    with open(VIDEO_LIBRARY_PATH, "w") as f:
+        json.dump(library, f, indent=2, default=str)
+
+videos_data = load_video_library()
+
 pipeline_status = {
     "status": "idle",
     "queue_size": 0,
     "active_jobs": 0,
-    "videos_processed": 147,
-    "videos_uploaded": 134,
+    "videos_processed": len(videos_data),
+    "videos_uploaded": len([v for v in videos_data if v.get("status") == "uploaded"]),
     "success_rate": 91.2,
     "uptime": 0,
     "last_activity": datetime.now().isoformat(),
-    "avg_processing_time": 180  # Average processing time in seconds
+    "avg_processing_time": 180
 }
-
-videos_data = [
-    {
-        "id": 1,
-        "title": "AI Generated Sunset Scene",
-        "filename": "sunset_scene_001.mp4",
-        "status": "uploaded",
-        "youtube_url": "https://youtube.com/watch?v=abc123",
-        "views": 1247,
-        "created_at": "2024-11-04T15:30:00Z"
-    },
-    {
-        "id": 2,
-        "title": "Futuristic City Landscape", 
-        "filename": "city_landscape_002.mp4",
-        "status": "uploading",
-        "progress": 67,
-        "created_at": "2024-11-04T16:45:00Z"
-    },
-    {
-        "id": 3,
-        "title": "Ocean Waves Animation",
-        "filename": "ocean_waves_003.mp4", 
-        "status": "pending",
-        "created_at": "2024-11-04T17:12:00Z"
-    }
-]
 
 @app.get("/")
 async def root():
@@ -1285,6 +1284,7 @@ async def generate_video(request: GenerationRequest):
         # Generate detailed prompt
         detailed_prompt = generate_detailed_prompt(request)
         
+
         # Initialize job ID and video entry
         global videos_data
         new_id = len(videos_data) + 1 if videos_data else 1
@@ -1312,8 +1312,8 @@ async def generate_video(request: GenerationRequest):
                 "versions": [],
                 "error": None
             }
-            
             videos_data.append(new_video)
+            save_video_library(videos_data)
             print(f"Created video entry: {new_video}")
 
             # Verify required directories exist
@@ -1332,12 +1332,13 @@ async def generate_video(request: GenerationRequest):
                 print(f"Traceback: {traceback.format_exc()}")
                 new_video["status"] = "error"
                 new_video["error"] = error_msg
+                save_video_library(videos_data)
                 return {
                     "success": False,
                     "message": error_msg,
                     "job_id": job_id
                 }
-            
+            save_video_library(videos_data)
             return {
                 "success": True,
                 "message": "Video generation started successfully",
@@ -1639,6 +1640,85 @@ async def get_videos():
         "total": len(videos_data)
     }
 
+@app.get("/api/v1/videos/library", response_model=Any)
+async def get_video_library():
+    print("[DEBUG] /api/v1/videos/library endpoint called")
+    """Get all processed videos available for upload"""
+    # This endpoint should not require any parameters or body.
+    try:
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        project_root = os.path.dirname(os.path.dirname(current_dir))
+        processed_dir = os.path.join(project_root, "videos", "processed")
+        if not os.path.exists(processed_dir):
+            return {"videos": [], "total": 0}
+        persistent_metadata = {v.get("filename"): v for v in videos_data if v.get("filename")}
+        library_videos = []
+        video_extensions = ['.mp4', '.mov', '.avi', '.mkv']
+        for filename in os.listdir(processed_dir):
+            if any(filename.lower().endswith(ext) for ext in video_extensions):
+                filepath = os.path.join(processed_dir, filename)
+                if os.path.isfile(filepath):
+                    file_stats = os.stat(filepath)
+                    file_size = file_stats.st_size
+                    created_time = datetime.fromtimestamp(file_stats.st_ctime)
+                    is_sora_generated = filename.startswith('sora2pro_')
+                    is_dalle_generated = filename.startswith('dalle_')
+                    is_fallback = filename.startswith('fallback_')
+                    generation_method = "sora_ai" if is_sora_generated else ("dalle" if is_dalle_generated else ("fallback" if is_fallback else "unknown"))
+                    meta = persistent_metadata.get(filename, {})
+                    prompt = meta.get("prompt")
+                    style = meta.get("style")
+                    orientation = meta.get("orientation")
+                    duration = meta.get("duration")
+                    created_at = meta.get("created_at", created_time.isoformat())
+                    uploaded_status = meta.get("status", "not_uploaded")
+                    youtube_url = meta.get("youtube_url")
+                    video_name = filename.replace('.mp4', '').replace('.mov', '')
+                    thumbnail_filename = f"{video_name}_thumbnail.jpg"
+                    thumbnail_path = os.path.join(THUMBNAILS_DIR, thumbnail_filename)
+                    has_thumbnail = os.path.exists(thumbnail_path)
+                    thumbnail_url = f"/api/v1/thumbnails/view/{thumbnail_filename}" if has_thumbnail else None
+                    library_videos.append({
+                        "id": filename.replace('.', '_'),
+                        "filename": filename,
+                        "title": filename.replace('.mp4', '').replace('_', ' ').title(),
+                        "prompt": prompt,
+                        "style": style,
+                        "orientation": orientation,
+                        "duration": duration,
+                        "url": f"/api/v1/videos/view/{filename}",
+                        "download_url": f"/api/v1/videos/download/{filename}",
+                        "thumbnail_url": thumbnail_url,
+                        "has_thumbnail": has_thumbnail,
+                        "file_size": file_size,
+                        "file_size_mb": round(file_size / (1024 * 1024), 2),
+                        "created_at": created_at,
+                        "generated_with": generation_method,
+                        "upload_status": uploaded_status,
+                        "youtube_url": youtube_url,
+                        "can_upload": uploaded_status == "not_uploaded"
+                    })
+        library_videos.sort(key=lambda x: x["created_at"], reverse=True)
+        return {
+            "videos": library_videos,
+            "total": len(library_videos),
+            "total_size_mb": round(sum(v["file_size"] for v in library_videos) / (1024 * 1024), 2),
+            "by_method": {
+                "sora_ai": len([v for v in library_videos if v["generated_with"] == "sora_ai"]),
+                "dalle": len([v for v in library_videos if v["generated_with"] == "dalle"]),
+                "fallback": len([v for v in library_videos if v["generated_with"] == "fallback"]),
+                "unknown": len([v for v in library_videos if v["generated_with"] == "unknown"])
+            },
+            "by_upload_status": {
+                "uploaded": len([v for v in library_videos if v["upload_status"] == "uploaded"]),
+                "not_uploaded": len([v for v in library_videos if v["upload_status"] == "not_uploaded"]),
+                "uploading": len([v for v in library_videos if v["upload_status"] == "uploading"]),
+                "failed": len([v for v in library_videos if v["upload_status"] == "failed"])
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error loading video library: {str(e)}")
+
 @app.get("/api/v1/videos/{video_id}")
 async def get_video(video_id: int):
     """Get specific video"""
@@ -1768,21 +1848,21 @@ async def get_video_stats():
     }
 
 # Video Management Endpoints
-@app.get("/api/v1/videos/library")
+from typing import Any
+@app.get("/api/v1/videos/library", response_model=Any)
 async def get_video_library():
+    print("[DEBUG] /api/v1/videos/library endpoint called")
     """Get all processed videos available for upload"""
+    # This endpoint should not require any parameters or body.
     try:
         current_dir = os.path.dirname(os.path.abspath(__file__))
         project_root = os.path.dirname(os.path.dirname(current_dir))
         processed_dir = os.path.join(project_root, "videos", "processed")
-        
         if not os.path.exists(processed_dir):
             return {"videos": [], "total": 0}
-        
+        persistent_metadata = {v.get("filename"): v for v in videos_data if v.get("filename")}
         library_videos = []
         video_extensions = ['.mp4', '.mov', '.avi', '.mkv']
-        
-        # Get all video files
         for filename in os.listdir(processed_dir):
             if any(filename.lower().endswith(ext) for ext in video_extensions):
                 filepath = os.path.join(processed_dir, filename)
@@ -1790,60 +1870,44 @@ async def get_video_library():
                     file_stats = os.stat(filepath)
                     file_size = file_stats.st_size
                     created_time = datetime.fromtimestamp(file_stats.st_ctime)
-                    
-                    # Extract video info from filename
                     is_sora_generated = filename.startswith('sora2pro_')
                     is_dalle_generated = filename.startswith('dalle_')
                     is_fallback = filename.startswith('fallback_')
-                    
                     generation_method = "sora_ai" if is_sora_generated else ("dalle" if is_dalle_generated else ("fallback" if is_fallback else "unknown"))
-                    
-                    # Check if this video has been uploaded
-                    uploaded_status = "not_uploaded"
-                    youtube_url = None
-                    
-                    # Check in videos_data for upload status
-                    for video_data in videos_data:
-                        if "versions" in video_data:
-                            for version in video_data.get("versions", []):
-                                if version.get("filename") == filename:
-                                    metadata = video_data.get("metadata", {})
-                                    if metadata.get("youtube_status") == "completed":
-                                        uploaded_status = "uploaded"
-                                        youtube_url = metadata.get("youtube_url")
-                                    elif metadata.get("youtube_status") == "uploading":
-                                        uploaded_status = "uploading"
-                                    elif metadata.get("youtube_status") == "failed":
-                                        uploaded_status = "failed"
-                                    break
-                    
-                    # Check for thumbnail
+                    meta = persistent_metadata.get(filename, {})
+                    prompt = meta.get("prompt")
+                    style = meta.get("style")
+                    orientation = meta.get("orientation")
+                    duration = meta.get("duration")
+                    created_at = meta.get("created_at", created_time.isoformat())
+                    uploaded_status = meta.get("status", "not_uploaded")
+                    youtube_url = meta.get("youtube_url")
                     video_name = filename.replace('.mp4', '').replace('.mov', '')
                     thumbnail_filename = f"{video_name}_thumbnail.jpg"
                     thumbnail_path = os.path.join(THUMBNAILS_DIR, thumbnail_filename)
                     has_thumbnail = os.path.exists(thumbnail_path)
                     thumbnail_url = f"/api/v1/thumbnails/view/{thumbnail_filename}" if has_thumbnail else None
-                    
                     library_videos.append({
-                        "id": filename.replace('.', '_'),  # Safe ID for frontend
+                        "id": filename.replace('.', '_'),
                         "filename": filename,
                         "title": filename.replace('.mp4', '').replace('_', ' ').title(),
+                        "prompt": prompt,
+                        "style": style,
+                        "orientation": orientation,
+                        "duration": duration,
                         "url": f"/api/v1/videos/view/{filename}",
                         "download_url": f"/api/v1/videos/download/{filename}",
                         "thumbnail_url": thumbnail_url,
                         "has_thumbnail": has_thumbnail,
                         "file_size": file_size,
                         "file_size_mb": round(file_size / (1024 * 1024), 2),
-                        "created_at": created_time.isoformat(),
+                        "created_at": created_at,
                         "generated_with": generation_method,
                         "upload_status": uploaded_status,
                         "youtube_url": youtube_url,
                         "can_upload": uploaded_status == "not_uploaded"
                     })
-        
-        # Sort by creation date (newest first)
         library_videos.sort(key=lambda x: x["created_at"], reverse=True)
-        
         return {
             "videos": library_videos,
             "total": len(library_videos),
@@ -1861,7 +1925,6 @@ async def get_video_library():
                 "failed": len([v for v in library_videos if v["upload_status"] == "failed"])
             }
         }
-        
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error loading video library: {str(e)}")
 

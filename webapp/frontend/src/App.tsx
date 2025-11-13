@@ -7,7 +7,7 @@ import { useWebSocket } from './hooks/useWebSocket';
 import { Layout } from './components/Layout';
 import { Dashboard } from './pages/Dashboard';
 import { AIGeneration } from './pages/AIGeneration';
-import { VideoManager } from './pages/VideoManager';
+import VideoManager from './pages/VideoManager';
 import { Analytics } from './pages/Analytics';
 import { Settings } from './pages/Settings';
 

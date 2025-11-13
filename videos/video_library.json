@@ -1,0 +1,279 @@
+[
+  {
+    "id": 1,
+    "job_id": "job_1",
+    "prompt": "A high-quality video showing video of pigs flying. Technical specs: 9:16 aspect ratio, vertical format, 4 second duration, high production value, professional cinematography, 24fps feel. Camera work: wide establishing shot, expansive view, showing full scene context. Setting: organic natural environment, outdoor setting, landscape elements. Pacing: quick dynamic action, fast-paced movement, high energy. Quality: ultra-high definition, professional video production quality, smooth motion blur where appropriate, crisp details and sharp focus, consistent visual style throughout.",
+    "style": "cinematic",
+    "orientation": "portrait",
+    "duration": "4s",
+    "camera_view": "wide",
+    "background": "natural",
+    "lighting": "",
+    "color_palette": "",
+    "weather": "",
+    "time_of_day": "",
+    "additional_details": "",
+    "status": "generating",
+    "created_at": "2025-11-12T21:34:43.447607",
+    "versions": [],
+    "error": null
+  },
+  {
+    "id": 2,
+    "job_id": "job_2",
+    "prompt": "A high-quality video showing video of pigs flying in the sky. Technical specs: 9:16 aspect ratio, vertical format, 4 second duration, high production value, professional cinematography, 24fps feel. Camera work: wide establishing shot, expansive view, showing full scene context. Setting: organic natural environment, outdoor setting, landscape elements. Pacing: quick dynamic action, fast-paced movement, high energy. Quality: ultra-high definition, professional video production quality, smooth motion blur where appropriate, crisp details and sharp focus, consistent visual style throughout.",
+    "style": "cinematic",
+    "orientation": "portrait",
+    "duration": "4s",
+    "camera_view": "wide",
+    "background": "natural",
+    "lighting": "",
+    "color_palette": "",
+    "weather": "",
+    "time_of_day": "",
+    "additional_details": "",
+    "status": "completed",
+    "created_at": "2025-11-12T21:42:41.361644",
+    "versions": [
+      {
+        "id": "v1_1763005361.362669",
+        "version": 1,
+        "status": "completed",
+        "created_at": "2025-11-12T21:42:41.362679",
+        "url": "/api/v1/videos/view/sora_video_4s_20251112_214515.mp4",
+        "filename": "sora_video_4s_20251112_214515.mp4",
+        "completed_at": "2025-11-12T21:45:17.556471",
+        "generated_with": "ai_generated"
+      }
+    ],
+    "error": null,
+    "version_statuses": {
+      "0": "finalizing"
+    },
+    "processed_dir": "/Users/adityamiriyala/Documents/video automation/videos/processed",
+    "filename": "sora_video_4s_20251112_214515.mp4",
+    "completed_at": "2025-11-12T21:45:17.556569",
+    "metadata": {
+      "selected_version": null,
+      "generated_title": null,
+      "generated_description": null,
+      "generated_thumbnail": null,
+      "youtube_status": "pending"
+    }
+  },
+  {
+    "id": 3,
+    "job_id": "job_3",
+    "prompt": "A high-quality video showing video of pigs swimming. Technical specs: 9:16 aspect ratio, vertical format, 4 second duration, high production value, professional cinematography, 24fps feel. Camera work: wide establishing shot, expansive view, showing full scene context. Setting: organic natural environment, outdoor setting, landscape elements. Pacing: quick dynamic action, fast-paced movement, high energy. Quality: ultra-high definition, professional video production quality, smooth motion blur where appropriate, crisp details and sharp focus, consistent visual style throughout.",
+    "style": "cinematic",
+    "orientation": "portrait",
+    "duration": "4s",
+    "camera_view": "wide",
+    "background": "natural",
+    "lighting": "",
+    "color_palette": "",
+    "weather": "",
+    "time_of_day": "",
+    "additional_details": "",
+    "status": "completed",
+    "created_at": "2025-11-12T21:55:13.442608",
+    "versions": [
+      {
+        "id": "v1_1763006113.447096",
+        "version": 1,
+        "status": "completed",
+        "created_at": "2025-11-12T21:55:13.447136",
+        "url": "/api/v1/videos/view/sora_video_4s_20251112_215744.mp4",
+        "filename": "sora_video_4s_20251112_215744.mp4",
+        "completed_at": "2025-11-12T21:57:47.618738",
+        "generated_with": "ai_generated"
+      }
+    ],
+    "error": null,
+    "version_statuses": {
+      "0": "finalizing"
+    },
+    "processed_dir": "/Users/adityamiriyala/Documents/video automation/videos/processed",
+    "filename": "sora_video_4s_20251112_215744.mp4",
+    "completed_at": "2025-11-12T21:57:47.618807",
+    "metadata": {
+      "selected_version": null,
+      "generated_title": null,
+      "generated_description": null,
+      "generated_thumbnail": null,
+      "youtube_status": "pending"
+    }
+  },
+  {
+    "id": 4,
+    "job_id": "job_4",
+    "prompt": "A high-quality video showing video of pigs flying. Technical specs: 9:16 aspect ratio, vertical format, 4 second duration, high production value, professional cinematography, 24fps feel. Camera work: wide establishing shot, expansive view, showing full scene context. Setting: organic natural environment, outdoor setting, landscape elements. Pacing: quick dynamic action, fast-paced movement, high energy. Quality: ultra-high definition, professional video production quality, smooth motion blur where appropriate, crisp details and sharp focus, consistent visual style throughout.",
+    "style": "cinematic",
+    "orientation": "portrait",
+    "duration": "4s",
+    "camera_view": "wide",
+    "background": "natural",
+    "lighting": "",
+    "color_palette": "",
+    "weather": "",
+    "time_of_day": "",
+    "additional_details": "",
+    "status": "completed",
+    "created_at": "2025-11-12T22:06:19.974188",
+    "versions": [
+      {
+        "id": "v1_1763006779.977475",
+        "version": 1,
+        "status": "completed",
+        "created_at": "2025-11-12T22:06:19.977497",
+        "url": "/api/v1/videos/view/sora_video_4s_20251112_220848.mp4",
+        "filename": "sora_video_4s_20251112_220848.mp4",
+        "completed_at": "2025-11-12T22:08:51.337272",
+        "generated_with": "ai_generated"
+      }
+    ],
+    "error": null,
+    "version_statuses": {
+      "0": "finalizing"
+    },
+    "processed_dir": "/Users/adityamiriyala/Documents/video automation/videos/processed",
+    "filename": "sora_video_4s_20251112_220848.mp4",
+    "completed_at": "2025-11-12T22:08:51.337385",
+    "metadata": {
+      "selected_version": null,
+      "generated_title": null,
+      "generated_description": null,
+      "generated_thumbnail": null,
+      "youtube_status": "pending"
+    }
+  },
+  {
+    "id": 5,
+    "job_id": "job_5",
+    "prompt": "A high-quality video showing video of squirrels dancing in the water. Technical specs: 9:16 aspect ratio, vertical format, 4 second duration, high production value, professional cinematography, 24fps feel. Camera work: wide establishing shot, expansive view, showing full scene context. Setting: organic natural environment, outdoor setting, landscape elements. Pacing: quick dynamic action, fast-paced movement, high energy. Quality: ultra-high definition, professional video production quality, smooth motion blur where appropriate, crisp details and sharp focus, consistent visual style throughout.",
+    "style": "cinematic",
+    "orientation": "portrait",
+    "duration": "4s",
+    "camera_view": "wide",
+    "background": "natural",
+    "lighting": "",
+    "color_palette": "",
+    "weather": "",
+    "time_of_day": "",
+    "additional_details": "",
+    "status": "completed",
+    "created_at": "2025-11-12T22:12:14.023555",
+    "versions": [
+      {
+        "id": "v1_1763007134.02771",
+        "version": 1,
+        "status": "completed",
+        "created_at": "2025-11-12T22:12:14.027737",
+        "url": "/api/v1/videos/view/sora_video_4s_20251112_221446.mp4",
+        "filename": "sora_video_4s_20251112_221446.mp4",
+        "completed_at": "2025-11-12T22:14:49.805841",
+        "generated_with": "ai_generated"
+      }
+    ],
+    "error": null,
+    "version_statuses": {
+      "0": "finalizing"
+    },
+    "processed_dir": "/Users/adityamiriyala/Documents/video automation/videos/processed",
+    "filename": "sora_video_4s_20251112_221446.mp4",
+    "completed_at": "2025-11-12T22:14:49.805981",
+    "metadata": {
+      "selected_version": null,
+      "generated_title": null,
+      "generated_description": null,
+      "generated_thumbnail": null,
+      "youtube_status": "pending"
+    }
+  },
+  {
+    "id": 6,
+    "job_id": "job_6",
+    "prompt": "A high-quality video showing video of sharks flying. Technical specs: 9:16 aspect ratio, vertical format, 4 second duration, high production value, professional cinematography, 24fps feel. Camera work: wide establishing shot, expansive view, showing full scene context. Setting: organic natural environment, outdoor setting, landscape elements. Pacing: quick dynamic action, fast-paced movement, high energy. Quality: ultra-high definition, professional video production quality, smooth motion blur where appropriate, crisp details and sharp focus, consistent visual style throughout.",
+    "style": "cinematic",
+    "orientation": "portrait",
+    "duration": "4s",
+    "camera_view": "wide",
+    "background": "natural",
+    "lighting": "",
+    "color_palette": "",
+    "weather": "",
+    "time_of_day": "",
+    "additional_details": "",
+    "status": "completed",
+    "created_at": "2025-11-12T23:18:19.257968",
+    "versions": [
+      {
+        "id": "v1_1763011099.261605",
+        "version": 1,
+        "status": "completed",
+        "created_at": "2025-11-12T23:18:19.261644",
+        "url": "/api/v1/videos/view/sora_video_4s_20251112_232050.mp4",
+        "filename": "sora_video_4s_20251112_232050.mp4",
+        "completed_at": "2025-11-12T23:20:54.676759",
+        "generated_with": "ai_generated"
+      }
+    ],
+    "error": null,
+    "version_statuses": {
+      "0": "finalizing"
+    },
+    "processed_dir": "/Users/adityamiriyala/Documents/video automation/videos/processed",
+    "filename": "sora_video_4s_20251112_232050.mp4",
+    "completed_at": "2025-11-12T23:20:54.676853",
+    "metadata": {
+      "selected_version": null,
+      "generated_title": null,
+      "generated_description": null,
+      "generated_thumbnail": null,
+      "youtube_status": "pending"
+    }
+  },
+  {
+    "id": 7,
+    "job_id": "job_7",
+    "prompt": "A high-quality video showing video of men walking on water. Technical specs: 9:16 aspect ratio, vertical format, 10 second duration, high production value, professional cinematography, 24fps feel. Camera work: wide establishing shot, expansive view, showing full scene context. Setting: organic natural environment, outdoor setting, landscape elements. Pacing: balanced rhythm, moderate pace, engaging motion. Quality: ultra-high definition, professional video production quality, smooth motion blur where appropriate, crisp details and sharp focus, consistent visual style throughout.",
+    "style": "cinematic",
+    "orientation": "portrait",
+    "duration": "10s",
+    "camera_view": "wide",
+    "background": "natural",
+    "lighting": "",
+    "color_palette": "",
+    "weather": "",
+    "time_of_day": "",
+    "additional_details": "",
+    "status": "completed",
+    "created_at": "2025-11-13T00:34:12.141449",
+    "versions": [
+      {
+        "id": "v1_1763015652.144988",
+        "version": 1,
+        "status": "completed",
+        "created_at": "2025-11-13T00:34:12.145009",
+        "url": "/api/v1/videos/view/sora_video_10s_20251113_003641.mp4",
+        "filename": "sora_video_10s_20251113_003641.mp4",
+        "completed_at": "2025-11-13T00:36:54.539593",
+        "generated_with": "ai_generated"
+      }
+    ],
+    "error": null,
+    "version_statuses": {
+      "0": "finalizing"
+    },
+    "processed_dir": "/Users/adityamiriyala/Documents/video automation/videos/processed",
+    "filename": "sora_video_10s_20251113_003641.mp4",
+    "completed_at": "2025-11-13T00:36:54.539714",
+    "metadata": {
+      "selected_version": null,
+      "generated_title": null,
+      "generated_description": null,
+      "generated_thumbnail": null,
+      "youtube_status": "pending"
+    }
+  }
+]
